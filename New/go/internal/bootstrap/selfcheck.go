@@ -1,4 +1,4 @@
-package selfcheck
+package bootstrap
 
 import (
 	"fmt"
@@ -10,35 +10,17 @@ import (
 	"stockcentraluploadlistproductsv2/internal/providers"
 )
 
-// Este archivo reúne chequeos simples para confirmar que el ambiente está
-// listo antes de correr el batch de verdad.
-//
-// La idea no es procesar nada, sino responder preguntas concretas como:
-// - ¿la configuración carga?
-// - ¿las carpetas existen y se pueden usar?
-// - ¿hay permiso para escribir logs?
-// - ¿SQL Server responde?
-
-// Result guarda el resultado de un chequeo puntual.
-//
-// Cada item representa una sola validación para que, si algo falla, el motivo
-// se vea rápido y no quede escondido dentro de un error más grande.
-type Result struct {
+// SelfCheckResult representa un chequeo individual del modo self-check.
+type SelfCheckResult struct {
 	Name   string
 	OK     bool
 	Detail string
 }
 
-// Run corre el modo self-check completo sin arrancar el batch.
-//
-// El flujo es:
-// 1. revisar que los archivos de config existan
-// 2. intentar cargar la configuración real
-// 3. validar carpetas, permisos y conexión a SQL
-// 4. imprimir un resumen entendible
-func Run(settingsPath, envPath string, out io.Writer) error {
-	// Primero verificamos que los archivos base estén donde esperamos.
-	results := []Result{
+// RunSelfCheck valida el ambiente sin ejecutar el batch real.
+func RunSelfCheck(settingsPath, envPath string, out io.Writer) error {
+	// Primero chequeamos archivos base antes de intentar cargar configuración.
+	results := []SelfCheckResult{
 		runCheck("settings-file", func() error {
 			return ensureFileReadable(settingsPath)
 		}),
@@ -47,11 +29,10 @@ func Run(settingsPath, envPath string, out io.Writer) error {
 		}),
 	}
 
-	// Si la configuración no carga, frenamos acá porque el resto de los
-	// chequeos depende de esos datos.
+	// Si la configuración no carga, frenamos acá y mostramos lo ya evaluado.
 	cfg, err := appconfig.Load(settingsPath, envPath)
 	if err != nil {
-		results = append(results, Result{
+		results = append(results, SelfCheckResult{
 			Name:   "config-load",
 			OK:     false,
 			Detail: err.Error(),
@@ -60,16 +41,12 @@ func Run(settingsPath, envPath string, out io.Writer) error {
 		return fmt.Errorf("self-check failed")
 	}
 
-	// Si cargó bien, seguimos con los chequeos que ya usan la config real.
-	results = append(results, Result{Name: "config-load", OK: true, Detail: "configuration loaded"})
+	// Con config válida podemos seguir con carpetas, logging y SQL.
+	results = append(results, SelfCheckResult{Name: "config-load", OK: true, Detail: "configuration loaded"})
 	results = append(results, collectChecks(cfg)...)
-
-	// Siempre mostramos el detalle completo para que sea fácil ver qué pasó,
-	// incluso cuando uno de los pasos falla.
 	printResults(out, results)
 
-	// Si al menos un check falló, devolvemos error para que el proceso termine
-	// con código distinto de cero.
+	// El self-check completo falla si al menos una validación quedó en FAIL.
 	for _, result := range results {
 		if !result.OK {
 			return fmt.Errorf("self-check failed")
@@ -79,10 +56,10 @@ func Run(settingsPath, envPath string, out io.Writer) error {
 	return nil
 }
 
-// collectChecks junta los chequeos que dependen de una config ya cargada.
-// Así la parte principal de Run queda más fácil de seguir.
-func collectChecks(cfg appconfig.Config) []Result {
-	return []Result{
+// collectChecks agrupa los chequeos que dependen de una config válida.
+func collectChecks(cfg appconfig.Config) []SelfCheckResult {
+	// Este bloque reúne validaciones de filesystem, logging y base de datos.
+	return []SelfCheckResult{
 		runCheck("logging-config", func() error {
 			return validateLoggingConfig(cfg.Logging)
 		}),
@@ -104,28 +81,28 @@ func collectChecks(cfg appconfig.Config) []Result {
 	}
 }
 
-// runCheck ejecuta una validación y la convierte en un resultado uniforme.
-// Esto evita repetir siempre el mismo manejo de OK/FAIL.
-func runCheck(name string, fn func() error) Result {
+// runCheck ejecuta una validación y la convierte a un resultado uniforme.
+func runCheck(name string, fn func() error) SelfCheckResult {
+	// La función concreta decide si el check pasa o falla.
 	if err := fn(); err != nil {
-		return Result{
+		return SelfCheckResult{
 			Name:   name,
 			OK:     false,
 			Detail: err.Error(),
 		}
 	}
 
-	return Result{
+	return SelfCheckResult{
 		Name:   name,
 		OK:     true,
 		Detail: "ok",
 	}
 }
 
-// printResults escribe la salida final línea por línea.
-// La intención es que se pueda leer rápido en consola o en un log.
-func printResults(out io.Writer, results []Result) {
+// printResults escribe el reporte final de checks.
+func printResults(out io.Writer, results []SelfCheckResult) {
 	for _, result := range results {
+		// Traducimos el booleano a una etiqueta simple de consola.
 		status := "OK"
 		if !result.OK {
 			status = "FAIL"
@@ -139,7 +116,7 @@ func printResults(out io.Writer, results []Result) {
 	}
 }
 
-// ensureFileReadable confirma que la ruta exista, sea archivo y se pueda abrir.
+// ensureFileReadable confirma que la ruta exista, sea archivo y pueda abrirse.
 func ensureFileReadable(path string) error {
 	info, err := os.Stat(path)
 	if err != nil {
@@ -158,9 +135,7 @@ func ensureFileReadable(path string) error {
 	return nil
 }
 
-// ensureOptionalFileReadable trata al `.env` como archivo esperado, pero deja
-// un mensaje más claro si no está porque la app también podría leer variables
-// del entorno del sistema.
+// ensureOptionalFileReadable revisa el `.env` con un mensaje más claro.
 func ensureOptionalFileReadable(path string) error {
 	if path == "" {
 		return fmt.Errorf("path is empty")
@@ -176,8 +151,7 @@ func ensureOptionalFileReadable(path string) error {
 	return ensureFileReadable(path)
 }
 
-// ensureDirectoryReadable confirma que una carpeta exista y que al menos se
-// pueda listar su contenido.
+// ensureDirectoryReadable confirma que una carpeta exista y se pueda listar.
 func ensureDirectoryReadable(path string) error {
 	info, err := os.Stat(path)
 	if err != nil {
@@ -194,27 +168,23 @@ func ensureDirectoryReadable(path string) error {
 	return nil
 }
 
-// ensureDirectoryWritable prueba escritura real creando un archivo temporal.
-// No alcanza con que la carpeta exista: queremos comprobar que el proceso
-// realmente puede dejar archivos ahí.
+// ensureDirectoryWritable confirma que una carpeta permita escritura real.
 func ensureDirectoryWritable(path string) error {
+	// Esta validación intenta reproducir una escritura real de la app.
 	if path == "" {
 		return fmt.Errorf("path is empty")
 	}
 
-	// Si la carpeta no existe todavía, intentamos crearla igual que haría la app.
 	if err := os.MkdirAll(path, 0o755); err != nil {
 		return fmt.Errorf("create directory %s: %w", path, err)
 	}
 
-	// El archivo temporal nos sirve para validar creación, escritura y cierre.
 	testFile, err := os.CreateTemp(path, ".self-check-*")
 	if err != nil {
 		return fmt.Errorf("create temp file in %s: %w", path, err)
 	}
 
 	testName := testFile.Name()
-	// Escribimos un contenido mínimo para confirmar permiso real de escritura.
 	if _, err := testFile.WriteString("self-check"); err != nil {
 		_ = testFile.Close()
 		_ = os.Remove(testName)
@@ -226,7 +196,6 @@ func ensureDirectoryWritable(path string) error {
 		return fmt.Errorf("close temp file in %s: %w", path, err)
 	}
 
-	// Al final limpiamos el archivo para no dejar basura en el ambiente.
 	if err := os.Remove(testName); err != nil {
 		return fmt.Errorf("cleanup temp file in %s: %w", path, err)
 	}
@@ -234,8 +203,7 @@ func ensureDirectoryWritable(path string) error {
 	return nil
 }
 
-// validateLoggingConfig revisa que el bloque de logging tenga lo mínimo
-// necesario para poder armar los archivos de salida.
+// validateLoggingConfig revisa que el bloque de logging tenga datos mínimos.
 func validateLoggingConfig(cfg appconfig.LoggingConfig) error {
 	if cfg.Directory == "" {
 		return fmt.Errorf("logging.directory is empty")
@@ -256,8 +224,7 @@ func validateLoggingConfig(cfg appconfig.LoggingConfig) error {
 	return nil
 }
 
-// ensureSQLServerConnection intenta abrir y validar la conexión real.
-// Si esto falla, el batch tampoco podría arrancar bien después.
+// ensureSQLServerConnection intenta abrir la conexión real a SQL Server.
 func ensureSQLServerConnection(cfg appconfig.Config) error {
 	server, err := providers.NewSQLServer(cfg.Database, cfg.Secrets.DBConnectionString)
 	if err != nil {
