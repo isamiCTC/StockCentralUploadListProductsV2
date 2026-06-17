@@ -44,98 +44,104 @@ El flujo principal de V2 se reparte entre estos archivos:
 
 ### Entry point y orquestación
 
-1. [`go/cmd/StockCentralUploadListProductsV2/main.go`](/home/nacho/Downloads/SCUploadListProducts/go/cmd/StockCentralUploadListProductsV2/main.go)
+1. `go/cmd/StockCentralUploadListProductsV2/main.go`
    Punto de entrada. Decide el modo (`--run` o `--self-check`) y orquesta la acción elegida.
 
-2. [`go/internal/batch/processor.go`](/home/nacho/Downloads/SCUploadListProducts/go/internal/batch/processor.go)
+2. `go/internal/bootstrap/batch.go`
+   Construye todas las dependencias concretas del modo batch y expone helpers de logging de inicio/cierre.
+
+3. `go/internal/bootstrap/selfcheck.go`
+   Implementa el modo `--self-check` y sus verificaciones técnicas de ambiente.
+
+4. `go/internal/batch/processor.go`
    Orquestador principal del batch completo.
 
-3. [`go/internal/batch/file_processor.go`](/home/nacho/Downloads/SCUploadListProducts/go/internal/batch/file_processor.go)
+5. `go/internal/batch/file_processor.go`
    Procesador de un archivo individual.
 
 ### Configuración
 
-4. [`go/internal/config/loader.go`](/home/nacho/Downloads/SCUploadListProducts/go/internal/config/loader.go)
+6. `go/internal/config/loader.go`
    Carga `appsettings.toml` y `.env`, arma la configuración final y la valida.
 
-5. [`go/internal/config/settings.go`](/home/nacho/Downloads/SCUploadListProducts/go/internal/config/settings.go)
+7. `go/internal/config/settings.go`
    Modela las structs de configuración.
 
-6. [`go/config/appsettings.toml`](/home/nacho/Downloads/SCUploadListProducts/go/config/appsettings.toml)
+8. `go/config/appsettings.toml`
    Configuración no sensible.
 
 ### Providers y filesystem
 
-7. [`go/internal/providers/sqlserver.go`](/home/nacho/Downloads/SCUploadListProducts/go/internal/providers/sqlserver.go)
+9. `go/internal/providers/sqlserver.go`
    Conexión base a SQL Server.
 
-8. [`go/internal/providers/sqlserver_repository.go`](/home/nacho/Downloads/SCUploadListProducts/go/internal/providers/sqlserver_repository.go)
+10. `go/internal/providers/sqlserver_repository.go`
    Ejecución del SP de providers y mapping del resultset.
 
-9. [`go/internal/files/scanner.go`](/home/nacho/Downloads/SCUploadListProducts/go/internal/files/scanner.go)
+11. `go/internal/files/scanner.go`
    Descubrimiento de archivos en input.
 
-10. [`go/internal/files/mover.go`](/home/nacho/Downloads/SCUploadListProducts/go/internal/files/mover.go)
+12. `go/internal/files/mover.go`
     Movimiento de archivos entre `input`, `processing` y `processed`.
 
 ### Excel
 
-11. [`go/internal/excel/reader.go`](/home/nacho/Downloads/SCUploadListProducts/go/internal/excel/reader.go)
+13. `go/internal/excel/reader.go`
     Apertura del `.xlsx`, lectura de la primera hoja y armado del `Workbook`.
 
-12. [`go/internal/excel/validator.go`](/home/nacho/Downloads/SCUploadListProducts/go/internal/excel/validator.go)
+14. `go/internal/excel/validator.go`
     Validación estructural del archivo.
 
-13. [`go/internal/excel/mapper.go`](/home/nacho/Downloads/SCUploadListProducts/go/internal/excel/mapper.go)
+15. `go/internal/excel/mapper.go`
     Conversión fila por fila a DTOs tipados.
 
-14. [`go/internal/excel/numbers.go`](/home/nacho/Downloads/SCUploadListProducts/go/internal/excel/numbers.go)
+16. `go/internal/excel/numbers.go`
     Parsing numérico flexible.
 
-15. [`go/internal/excel/normalize.go`](/home/nacho/Downloads/SCUploadListProducts/go/internal/excel/normalize.go)
+17. `go/internal/excel/normalize.go`
     Normalización laxa de headers y celdas.
 
 ### API de productos y categorías
 
-16. [`go/internal/products/client.go`](/home/nacho/Downloads/SCUploadListProducts/go/internal/products/client.go)
+18. `go/internal/products/client.go`
     Cliente base REST.
 
-17. [`go/internal/products/products.go`](/home/nacho/Downloads/SCUploadListProducts/go/internal/products/products.go)
+19. `go/internal/products/products.go`
     Operaciones de producto y upsert legacy.
 
-18. [`go/internal/products/images.go`](/home/nacho/Downloads/SCUploadListProducts/go/internal/products/images.go)
+20. `go/internal/products/images.go`
     Sincronización legacy de imágenes.
 
-19. [`go/internal/products/subcategories.go`](/home/nacho/Downloads/SCUploadListProducts/go/internal/products/subcategories.go)
+21. `go/internal/products/subcategories.go`
     Fallback REST de subcategorías.
 
-20. [`go/internal/catalog/resolver.go`](/home/nacho/Downloads/SCUploadListProducts/go/internal/catalog/resolver.go)
+22. `go/internal/catalog/resolver.go`
     Resolución de categoría a partir de subcategoría.
 
-21. [`go/internal/catalog/hardcoded_map.go`](/home/nacho/Downloads/SCUploadListProducts/go/internal/catalog/hardcoded_map.go)
+23. `go/internal/catalog/hardcoded_map.go`
     Mapa hardcodeado heredado del legacy.
 
 ### Imágenes, resultados, mails y logs
 
-22. [`go/internal/images/downloader.go`](/home/nacho/Downloads/SCUploadListProducts/go/internal/images/downloader.go)
+24. `go/internal/images/downloader.go`
     Descarga de imágenes y conversión a Base64.
 
-23. [`go/internal/results/writer.go`](/home/nacho/Downloads/SCUploadListProducts/go/internal/results/writer.go)
+25. `go/internal/results/writer.go`
     Escritura de `Resultados` y `ErroresEstructura`.
 
-24. [`go/internal/notifications/service.go`](/home/nacho/Downloads/SCUploadListProducts/go/internal/notifications/service.go)
+26. `go/internal/notifications/service.go`
     Lógica funcional de mails.
 
-25. [`go/internal/notifications/recipients.go`](/home/nacho/Downloads/SCUploadListProducts/go/internal/notifications/recipients.go)
+27. `go/internal/notifications/recipients.go`
     Resolución de destinatarios.
 
-26. [`go/internal/notifications/sendgrid.go`](/home/nacho/Downloads/SCUploadListProducts/go/internal/notifications/sendgrid.go)
+28. `go/internal/notifications/sendgrid.go`
     Cliente concreto de SendGrid.
 
-27. [`go/internal/logging/logger.go`](/home/nacho/Downloads/SCUploadListProducts/go/internal/logging/logger.go)
+29. `go/internal/logging/logger.go`
     Logger propio, formato humano.
 
-28. [`go/internal/logging/factory.go`](/home/nacho/Downloads/SCUploadListProducts/go/internal/logging/factory.go)
+30. `go/internal/logging/factory.go`
     Construcción de ambos archivos de log con rotación vía `lumberjack`.
 
 ---
@@ -149,7 +155,7 @@ Hoy la V2 hace esto:
 3. si recibe `--self-check`, valida config, carpetas, escritura y SQL Server, e informa el resultado;
 4. si recibe `--run`, carga TOML y `.env`;
 5. inicializa logging;
-6. abre SQL Server;
+6. arma el runtime del batch desde `internal/bootstrap/batch.go`;
 7. ejecuta el SP de providers habilitados;
 8. descubre archivos `.xlsx` únicamente dentro de carpetas válidas de providers;
 9. arma un `FileJob` por archivo;
@@ -200,11 +206,11 @@ Eso vuelve al sistema:
 
 ## Bootstrap y arranque real
 
-Todo empieza en [`main.go`](/home/nacho/Downloads/SCUploadListProducts/go/cmd/StockCentralUploadListProductsV2/main.go).
+Todo empieza en `main.go`.
 
 ### Responsabilidad de `main`
 
-`main` fue dejado deliberadamente como orquestador puro. No contiene lógica de negocio del batch.
+`main` fue dejado deliberadamente como orquestador puro. No contiene lógica de negocio del batch ni el wiring detallado de dependencias.
 
 Su secuencia es:
 
@@ -215,6 +221,16 @@ Su secuencia es:
 5. si recibe `--self-check`, delega a `runSelfCheck`;
 6. si recibe `--run`, delega a `runBatch`.
 
+### Rol de `internal/bootstrap`
+
+Después del refactor actual, el arranque técnico ya no vive en `main.go`.
+
+Ahora:
+
+1. `main.go` decide el modo y controla códigos de salida;
+2. `internal/bootstrap/batch.go` arma el runtime concreto del batch;
+3. `internal/bootstrap/selfcheck.go` implementa el modo `--self-check`.
+
 ### Modo `--run`
 
 Cuando se elige `--run`, la secuencia es:
@@ -222,22 +238,16 @@ Cuando se elige `--run`, la secuencia es:
 1. crea `context.Background()`;
 2. carga config con `MustLoad`;
 3. inicializa logging;
-4. abre SQL Server;
-5. construye repositorio de providers;
-6. construye scanner;
-7. construye reader de Excel;
-8. construye client de API de productos;
-9. construye resolver de categorías;
-10. construye downloader de imágenes;
-11. construye mover;
-12. construye servicio de notificaciones;
-13. construye writer de resultados;
-14. construye `FileProcessor`;
-15. construye `Processor`;
-16. loguea configuración operativa;
-17. ejecuta `processor.Run(ctx)`;
-18. si falla, termina con exit code `1`;
-19. si sale bien, loguea el resumen final.
+4. llama a `bootstrap.BuildBatch(cfg, logs)`;
+5. dentro de ese bootstrap se abre SQL Server;
+6. se construyen repositorio de providers, scanner, reader de Excel, client de productos, resolver de categorías, downloader de imágenes, mover, servicio de notificaciones y writer de resultados;
+7. se construye `FileProcessor`;
+8. se construye `Processor`;
+9. `main` registra la configuración operativa con `bootstrap.LogBatchBootstrap`;
+10. ejecuta `runtime.Processor.Run(ctx)`;
+11. si falla, termina con exit code `1`;
+12. si sale bien, registra el resumen final con `bootstrap.LogBatchFinished`;
+13. al salir, intenta cerrar los recursos abiertos por el runtime.
 
 ### Modo `--self-check`
 
@@ -257,10 +267,12 @@ En cambio:
 10. imprime una línea `OK` o `FAIL` por cada chequeo;
 11. devuelve exit code `1` si alguno falla.
 
-### Qué no hace `main`
+### Qué ya no hace `main`
 
 No:
 
+- abre SQL Server;
+- construye repositorios o clients concretos;
 - abre archivos Excel;
 - ejecuta el SP directamente;
 - parsea filas;
@@ -269,9 +281,6 @@ No:
 - ni resuelve categorías.
 
 Todo eso queda delegado.
-
-El único cambio respecto de versiones anteriores es que ahora `main` sí decide
-explícitamente el modo de ejecución para evitar arranques accidentales del `.exe`.
 
 ---
 
@@ -284,7 +293,7 @@ La configuración se divide en dos fuentes:
 
 ### TOML
 
-En [`go/config/appsettings.toml`](/home/nacho/Downloads/SCUploadListProducts/go/config/appsettings.toml) viven:
+En `go/config/appsettings.toml` viven:
 
 - datos generales de app;
 - parámetros del batch;
@@ -304,7 +313,7 @@ En `.env` viven los secretos:
 
 ### Validación al arranque
 
-[`loader.go`](/home/nacho/Downloads/SCUploadListProducts/go/internal/config/loader.go) falla temprano si faltan datos críticos.
+`loader.go` falla temprano si faltan datos críticos.
 
 Valida, entre otras cosas:
 
@@ -483,7 +492,7 @@ La V2 mantiene la idea del legacy:
 
 ### Conexión a SQL Server
 
-[`sqlserver.go`](/home/nacho/Downloads/SCUploadListProducts/go/internal/providers/sqlserver.go):
+`sqlserver.go`:
 
 1. abre `database/sql` con driver `go-mssqldb`;
 2. hace `PingContext` con timeout;
@@ -491,7 +500,7 @@ La V2 mantiene la idea del legacy:
 
 ### Query usada
 
-[`sqlserver_repository.go`](/home/nacho/Downloads/SCUploadListProducts/go/internal/providers/sqlserver_repository.go) ejecuta:
+`sqlserver_repository.go` ejecuta:
 
 `EXEC ProvidersGetListByEnabledAndIntegratorAndCatalogID @Enabled = @p1, @IntegratorID = @p2, @CatalogID = @p3`
 
@@ -534,7 +543,7 @@ Lo que hoy se conserva del provider para el batch es:
 
 ## Descubrimiento de archivos
 
-El descubrimiento lo hace [`scanner.go`](/home/nacho/Downloads/SCUploadListProducts/go/internal/files/scanner.go).
+El descubrimiento lo hace `scanner.go`.
 
 ### Reglas de entrada
 
@@ -595,7 +604,7 @@ Igual que en la decisión acordada para la V2:
 
 ## Ciclo de vida del archivo
 
-El movimiento de archivos lo centraliza [`mover.go`](/home/nacho/Downloads/SCUploadListProducts/go/internal/files/mover.go).
+El movimiento de archivos lo centraliza `mover.go`.
 
 ### BuildPaths
 
@@ -652,7 +661,7 @@ Esto mejora mucho la observabilidad operativa respecto del legacy.
 
 ## Orquestación global del batch
 
-La corrida global vive en [`processor.go`](/home/nacho/Downloads/SCUploadListProducts/go/internal/batch/processor.go).
+La corrida global vive en `processor.go`.
 
 ### Flujo de `Run`
 
@@ -691,7 +700,7 @@ Se ordenan por `ID` para:
 
 ## Procesamiento de un archivo individual
 
-El corazón del flujo está en [`file_processor.go`](/home/nacho/Downloads/SCUploadListProducts/go/internal/batch/file_processor.go).
+El corazón del flujo está en `file_processor.go`.
 
 ### Flujo de `Process`
 
@@ -742,7 +751,7 @@ Esos casos quedan reflejados en resultados y logs, pero el archivo puede igualme
 
 ## Estados de archivo
 
-Los estados del archivo viven en [`file_result.go`](/home/nacho/Downloads/SCUploadListProducts/go/internal/domain/file_result.go).
+Los estados del archivo viven en `file_result.go`.
 
 ### Estados posibles
 
@@ -777,7 +786,7 @@ Cuando ocurrió un error técnico del pipeline del archivo y no se pudo completa
 
 ## Lectura del Excel
 
-La lectura base la hace [`reader.go`](/home/nacho/Downloads/SCUploadListProducts/go/internal/excel/reader.go).
+La lectura base la hace `reader.go`.
 
 ### Librería
 
@@ -817,7 +826,7 @@ Devuelve:
 
 ## Detección de formato
 
-La detección vive en [`formats.go`](/home/nacho/Downloads/SCUploadListProducts/go/internal/excel/formats.go).
+La detección vive en `formats.go`.
 
 ### Formatos soportados
 
@@ -844,7 +853,7 @@ Eso está alineado con la decisión que tomaste de sacarlo explícitamente del a
 
 ## Validación estructural del Excel
 
-La validación estructural vive en [`validator.go`](/home/nacho/Downloads/SCUploadListProducts/go/internal/excel/validator.go).
+La validación estructural vive en `validator.go`.
 
 ### Qué valida
 
@@ -917,7 +926,7 @@ En V2:
 
 ## Normalización de headers y celdas
 
-[`normalize.go`](/home/nacho/Downloads/SCUploadListProducts/go/internal/excel/normalize.go) separa dos ideas:
+`normalize.go` separa dos ideas:
 
 ### `NormalizeHeader`
 
@@ -949,7 +958,7 @@ Esto es importante porque:
 
 ## Parsing numérico flexible
 
-[`numbers.go`](/home/nacho/Downloads/SCUploadListProducts/go/internal/excel/numbers.go) implementa una mejora muy fuerte respecto del legacy.
+`numbers.go` implementa una mejora muy fuerte respecto del legacy.
 
 ### `ParseFlexibleFloat`
 
@@ -990,7 +999,7 @@ La V2 es mucho menos frágil frente a proveedores que mezclan:
 
 ## Mapeo de filas
 
-El mapping está en [`mapper.go`](/home/nacho/Downloads/SCUploadListProducts/go/internal/excel/mapper.go).
+El mapping está en `mapper.go`.
 
 ### Qué entra
 
@@ -1198,7 +1207,7 @@ Esto está alineado con la decisión funcional que veníamos siguiendo.
 
 ## Worker pool por fila
 
-La concurrencia principal vive en `processMappedRows` dentro de [`file_processor.go`](/home/nacho/Downloads/SCUploadListProducts/go/internal/batch/file_processor.go).
+La concurrencia principal vive en `processMappedRows` dentro de `file_processor.go`.
 
 ### Cómo funciona
 
@@ -1268,7 +1277,7 @@ Esto evita hacer requests a la API con datos ya rotos.
 
 ## Estado de fila
 
-Los estados viven en [`row_result.go`](/home/nacho/Downloads/SCUploadListProducts/go/internal/domain/row_result.go).
+Los estados viven en `row_result.go`.
 
 ### Estados posibles
 
@@ -1399,7 +1408,7 @@ Eso sigue la realidad del legacy.
 
 ## Resolución de categoría / subcategoría
 
-Esto vive en [`catalog/resolver.go`](/home/nacho/Downloads/SCUploadListProducts/go/internal/catalog/resolver.go).
+Esto vive en `catalog/resolver.go`.
 
 ### Orden de resolución
 
@@ -1409,7 +1418,7 @@ Esto vive en [`catalog/resolver.go`](/home/nacho/Downloads/SCUploadListProducts/
 
 ### Hardcode
 
-Está en [`hardcoded_map.go`](/home/nacho/Downloads/SCUploadListProducts/go/internal/catalog/hardcoded_map.go).
+Está en `hardcoded_map.go`.
 
 Conserva el conocimiento heredado del `switch` del legacy.
 
@@ -1446,7 +1455,7 @@ En V2, el resolvedor también cae a `Varios` si la API no resuelve, manteniendo 
 
 ## Cliente de API de productos
 
-El cliente base vive en [`products/client.go`](/home/nacho/Downloads/SCUploadListProducts/go/internal/products/client.go).
+El cliente base vive en `products/client.go`.
 
 ### Tecnología
 
@@ -1483,7 +1492,7 @@ Cada request agrega:
 
 ## Payload de producto
 
-El DTO de API vive en [`products/dto.go`](/home/nacho/Downloads/SCUploadListProducts/go/internal/products/dto.go).
+El DTO de API vive en `products/dto.go`.
 
 ### Campos enviados
 
@@ -1526,7 +1535,7 @@ El DTO de API vive en [`products/dto.go`](/home/nacho/Downloads/SCUploadListProd
 
 ## Upsert de producto
 
-La lógica vive en [`products/products.go`](/home/nacho/Downloads/SCUploadListProducts/go/internal/products/products.go).
+La lógica vive en `products/products.go`.
 
 ### Patrón
 
@@ -1588,7 +1597,7 @@ No:
 
 ## Descarga y conversión de imágenes
 
-La descarga está en [`images/downloader.go`](/home/nacho/Downloads/SCUploadListProducts/go/internal/images/downloader.go).
+La descarga está en `images/downloader.go`.
 
 ### Flujo
 
@@ -1621,7 +1630,7 @@ La intención funcional es la misma:
 
 ## Sincronización de imágenes contra la API
 
-La lógica vive en [`products/images.go`](/home/nacho/Downloads/SCUploadListProducts/go/internal/products/images.go).
+La lógica vive en `products/images.go`.
 
 ### Patrón legacy respetado
 
@@ -1735,7 +1744,7 @@ Hoy puede verse:
 
 ## Escritura del Excel de resultados
 
-La escritura la hace [`results/writer.go`](/home/nacho/Downloads/SCUploadListProducts/go/internal/results/writer.go).
+La escritura la hace `results/writer.go`.
 
 ### Archivo `Resultados`
 
@@ -1814,7 +1823,7 @@ Busca ser:
 
 ## Notificaciones por mail
 
-La lógica funcional está en [`notifications/service.go`](/home/nacho/Downloads/SCUploadListProducts/go/internal/notifications/service.go).
+La lógica funcional está en `notifications/service.go`.
 
 ### Cuándo se notifica
 
@@ -1832,7 +1841,7 @@ Si SendGrid falla:
 
 ### Resolución de destinatarios
 
-La hace [`recipients.go`](/home/nacho/Downloads/SCUploadListProducts/go/internal/notifications/recipients.go).
+La hace `recipients.go`.
 
 Regla:
 
@@ -1889,7 +1898,7 @@ Se adjunta:
 
 ### Envío concreto
 
-Lo hace [`sendgrid.go`](/home/nacho/Downloads/SCUploadListProducts/go/internal/notifications/sendgrid.go).
+Lo hace `sendgrid.go`.
 
 Pasos:
 
