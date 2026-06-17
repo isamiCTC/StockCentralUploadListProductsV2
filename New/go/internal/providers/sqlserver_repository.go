@@ -36,6 +36,8 @@ func NewSQLServerRepository(server *SQLServer, cfg appconfig.DatabaseConfig) *SQ
 // `ID`, `Name` y opcionalmente `Email` por nombre. Eso hace la lectura un poco
 // más robusta frente a cambios menores en el orden de columnas.
 func (r *SQLServerRepository) ListEnabledByIntegratorAndCatalog(ctx context.Context, integratorID, catalogID int) ([]domain.Provider, error) {
+	// Ejecutamos el SP de forma explícita para dejar visible qué parámetros
+	// salen desde la aplicación.
 	rows, err := r.server.QueryContext(
 		ctx,
 		fmt.Sprintf("EXEC %s @Enabled = @p1, @IntegratorID = @p2, @CatalogID = @p3", r.providersSPName),
@@ -80,6 +82,7 @@ func (r *SQLServerRepository) ListEnabledByIntegratorAndCatalog(ctx context.Cont
 	// Recorremos todas las filas y las convertimos al modelo mínimo del dominio.
 	var providers []domain.Provider
 	for rows.Next() {
+		// Cada fila del resultset representa un provider elegible.
 		provider, scanErr := scanProviderRow(rows, idIndex, nameIndex, emailIndex, len(columns))
 		if scanErr != nil {
 			return nil, scanErr
@@ -100,6 +103,8 @@ func scanProviderRow(rows *sql.Rows, idIndex, nameIndex, emailIndex, columnsCoun
 	rawValues := make([]sql.RawBytes, columnsCount)
 	destinations := make([]any, columnsCount)
 	for i := range rawValues {
+		// Scan necesita recibir punteros; usamos un slice paralelo para no
+		// asumir tipos concretos columna por columna.
 		destinations[i] = &rawValues[i]
 	}
 
@@ -117,6 +122,7 @@ func scanProviderRow(rows *sql.Rows, idIndex, nameIndex, emailIndex, columnsCoun
 		providerEmail = strings.TrimSpace(string(rawValues[emailIndex]))
 	}
 
+	// El dominio de batch solo necesita ID, nombre y email.
 	return domain.Provider{
 		ID:    providerID,
 		Name:  strings.TrimSpace(string(rawValues[nameIndex])),

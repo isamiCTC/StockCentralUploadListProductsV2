@@ -59,11 +59,14 @@ func (c *Client) CreateProduct(ctx context.Context, providerID int, product Prod
 // UpsertProductLegacy implementa el patrón exacto del servicio original:
 // intentar update y, si la API dice "Producto inexistente", pasar a create.
 func (c *Client) UpsertProductLegacy(ctx context.Context, providerID int, product Product) (UpsertResult, error) {
+	// El primer intento siempre es update, igual que en el proceso original.
 	updateMeta, err := c.UpdateProduct(ctx, providerID, product.Sku, product)
 	if err != nil {
 		return UpsertResult{}, err
 	}
 
+	// Si la API responde "producto inexistente", cambiamos de estrategia
+	// y lo intentamos crear.
 	if updateMeta.StatusCode == http.StatusBadRequest && isProductNotFound(updateMeta.Body) {
 		createMeta, createErr := c.CreateProduct(ctx, providerID, product)
 		if createErr != nil {
@@ -80,10 +83,12 @@ func (c *Client) UpsertProductLegacy(ctx context.Context, providerID int, produc
 		}, nil
 	}
 
+	// Si no hubo fallback y el update no fue exitoso, devolvemos error.
 	if !isSuccessfulStatus(updateMeta.StatusCode) {
 		return UpsertResult{}, fmt.Errorf("update product %s failed with status %d", product.Sku, updateMeta.StatusCode)
 	}
 
+	// Si llegamos acá, el producto ya existía y quedó actualizado.
 	return UpsertResult{
 		Action:     "UPDATE",
 		UpdateMeta: updateMeta,
@@ -92,17 +97,20 @@ func (c *Client) UpsertProductLegacy(ctx context.Context, providerID int, produc
 
 // SyncStockLegacy replica el comportamiento del Excel de 2 columnas.
 func (c *Client) SyncStockLegacy(ctx context.Context, providerID int, sku string, stock int) (*restyMeta, error) {
+	// Primero traemos el producto actual para no perder el resto del payload.
 	product, _, err := c.GetProduct(ctx, providerID, sku)
 	if err != nil {
 		return nil, err
 	}
 
+	// Solo tocamos stock y reenviamos el producto completo por PUT.
 	product.Stock = stock
 	updateMeta, err := c.UpdateProduct(ctx, providerID, sku, product)
 	if err != nil {
 		return nil, err
 	}
 
+	// La sincronización se considera exitosa solo con status HTTP 2xx.
 	if !isSuccessfulStatus(updateMeta.StatusCode) {
 		return nil, fmt.Errorf("sync stock for sku %s failed with status %d", sku, updateMeta.StatusCode)
 	}
@@ -112,6 +120,7 @@ func (c *Client) SyncStockLegacy(ctx context.Context, providerID int, sku string
 
 // BuildProductFromInput convierte un input ya validado al payload esperado por la API.
 func (c *Client) BuildProductFromInput(providerID int, input ProductInput, categoryBranch CategoryBranch) Product {
+	// Acá consolidamos el DTO interno del batch al contrato final de la API.
 	return Product{
 		Sku:              input.SKU,
 		ProviderId:       providerID,
@@ -162,6 +171,7 @@ func isProductNotFound(body []byte) bool {
 		return false
 	}
 
+	// Esta señal textual es la que dispara el fallback de update a create.
 	return strings.EqualFold(strings.TrimSpace(envelope.Result.Description), "Producto inexistente")
 }
 

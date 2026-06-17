@@ -20,10 +20,12 @@ func ResolveRecipients(cfg appconfig.NotificationsConfig, provider domain.Provid
 	unique := make(map[string]struct{})
 	recipients := make([]string, 0, len(cfg.AlwaysRecipients)+1)
 
+	// Primero entran los destinatarios fijos configurados para todas las corridas.
 	for _, value := range cfg.AlwaysRecipients {
 		addRecipient(unique, &recipients, value)
 	}
 
+	// Después sumamos el mail puntual del provider si existe.
 	addRecipient(unique, &recipients, provider.Email)
 
 	// Ordenamos para obtener un resultado estable y fácil de auditar.
@@ -38,6 +40,8 @@ func addRecipient(unique map[string]struct{}, recipients *[]string, raw string) 
 		return
 	}
 
+	// La comparación de duplicados se hace en minúscula, pero preservamos
+	// el valor original para el envío final.
 	key := strings.ToLower(value)
 	if _, exists := unique[key]; exists {
 		return

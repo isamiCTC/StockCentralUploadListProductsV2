@@ -44,6 +44,8 @@ func NewService(cfg appconfig.NotificationsConfig, sender MailSender, logs loggi
 // Si notificaciones está deshabilitado o no hay destinatarios, no falla:
 // simplemente registra y sale.
 func (s *Service) NotifyFileProcessed(ctx context.Context, job domain.FileJob, result domain.FileResult) error {
+	// La primera salida temprana es global: si el feature está apagado,
+	// no intentamos resolver nada más.
 	if !s.cfg.Enabled {
 		s.logs.Detail.Info("notification-skipped",
 			logging.Int("provider_id", job.ProviderID),
@@ -52,11 +54,14 @@ func (s *Service) NotifyFileProcessed(ctx context.Context, job domain.FileJob, r
 		return nil
 	}
 
+	// A partir del provider del archivo resolvemos destinatarios finales:
+	// mails fijos + mail del provider si corresponde.
 	recipients := ResolveRecipients(s.cfg, domain.Provider{
 		ID:    job.ProviderID,
 		Name:  job.ProviderName,
 		Email: job.ProviderEmail,
 	})
+	// Si no hay nadie a quien avisar, no se considera error técnico.
 	if len(recipients) == 0 {
 		s.logs.Detail.Warn("notification-skipped",
 			logging.Int("provider_id", job.ProviderID),
@@ -65,7 +70,10 @@ func (s *Service) NotifyFileProcessed(ctx context.Context, job domain.FileJob, r
 		return nil
 	}
 
+	// El payload resume el resultado del archivo y decide qué adjunto enviar.
 	subject, body, attachmentPath := buildNotificationPayload(job, result)
+	// Si no hay adjunto disponible, preferimos omitir el envío antes que mandar
+	// un mail incompleto.
 	if attachmentPath == "" {
 		s.logs.Detail.Warn("notification-skipped",
 			logging.Int("provider_id", job.ProviderID),
@@ -74,6 +82,7 @@ func (s *Service) NotifyFileProcessed(ctx context.Context, job domain.FileJob, r
 		return nil
 	}
 
+	// El envío real queda delegado al adaptador concreto de mail.
 	if err := s.sender.SendMail(ctx, s.cfg.FromEmail, recipients, subject, body, attachmentPath); err != nil {
 		return fmt.Errorf("send notification for provider %d file %s: %w", job.ProviderID, job.RelativePath, err)
 	}
@@ -96,6 +105,7 @@ func (s *Service) NotifyFileProcessed(ctx context.Context, job domain.FileJob, r
 func buildNotificationPayload(job domain.FileJob, result domain.FileResult) (subject, body, attachmentPath string) {
 	filename := filepath.Base(job.RelativePath)
 
+	// El estado final del archivo define tanto el texto como el adjunto.
 	switch result.Status {
 	case domain.FileStatusStructureError:
 		return fmt.Sprintf("Archivo rechazado - %d - %s", job.ProviderID, filename),

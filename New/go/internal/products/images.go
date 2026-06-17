@@ -59,7 +59,9 @@ func (c *Client) CreateProductImage(ctx context.Context, providerID int, sku str
 // - si existe y cambió, hacer PUT
 // - si PUT responde "Imagen inexistente", hacer POST
 func (c *Client) SyncImageLegacy(ctx context.Context, providerID int, sku string, index int, base64Image string) (ImageSyncResult, error) {
+	// Paso 1: intentamos leer la imagen actual de ese índice.
 	existingBase64, getMeta, getErr := c.GetProductImage(ctx, providerID, sku, index)
+	// Si ya existe exactamente igual, evitamos una subida innecesaria.
 	if getErr == nil && existingBase64 == base64Image {
 		return ImageSyncResult{
 			Action:      "SKIP_SAME_IMAGE",
@@ -68,12 +70,15 @@ func (c *Client) SyncImageLegacy(ctx context.Context, providerID int, sku string
 		}, nil
 	}
 
+	// Paso 2: armamos el payload común para update o create.
 	imagePayload := ProductImage{Base64: base64Image}
 	updateMeta, updateErr := c.UpdateProductImage(ctx, providerID, sku, index, imagePayload)
 	if updateErr != nil {
 		return ImageSyncResult{}, updateErr
 	}
 
+	// Paso 3: si PUT respondió con la señal legacy de "no existe",
+	// hacemos fallback a POST.
 	if updateMeta.StatusCode == http.StatusBadRequest && isImageNotFound(updateMeta.Body) {
 		createMeta, createErr := c.CreateProductImage(ctx, providerID, sku, imagePayload)
 		if createErr != nil {
@@ -92,10 +97,12 @@ func (c *Client) SyncImageLegacy(ctx context.Context, providerID int, sku string
 		}, nil
 	}
 
+	// Si no hubo fallback y PUT tampoco fue exitoso, la sincronización falla.
 	if !isSuccessfulStatus(updateMeta.StatusCode) {
 		return ImageSyncResult{}, fmt.Errorf("update image %d for sku %s failed with status %d", index, sku, updateMeta.StatusCode)
 	}
 
+	// Si llegamos acá, la imagen terminó actualizada por PUT.
 	return ImageSyncResult{
 		Action:      "UPDATE",
 		GetMeta:     getMeta,
@@ -112,6 +119,7 @@ func isImageNotFound(body []byte) bool {
 		return false
 	}
 
+	// Esta comparación replica literalmente la marca funcional del legado.
 	return strings.EqualFold(strings.TrimSpace(envelope.TransactionId), "34|Imagen inexistente")
 }
 

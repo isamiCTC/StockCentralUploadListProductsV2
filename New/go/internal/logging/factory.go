@@ -33,6 +33,8 @@ func MustNew(cfg appconfig.LoggingConfig) LoggerSet {
 // Summary escribe a consola + archivo.
 // Detail escribe solo a archivo.
 func NewLoggerSet(cfg appconfig.LoggingConfig) (LoggerSet, error) {
+	// Preparamos la carpeta una sola vez al inicio para que después los writes
+	// no fallen por un problema de estructura.
 	if err := os.MkdirAll(cfg.Directory, 0o755); err != nil {
 		return LoggerSet{}, fmt.Errorf("create log directory: %w", err)
 	}
@@ -55,6 +57,8 @@ func NewLoggerSet(cfg appconfig.LoggingConfig) (LoggerSet, error) {
 // newRollingFile arma el writer rotativo sobre el que escriben los logs.
 func newRollingFile(path string, cfg appconfig.LogFileConfig) io.Writer {
 	return &lumberjack.Logger{
+		// Lumberjack se ocupa de cortar y conservar archivos viejos sin que el
+		// resto del código tenga que pensar en eso.
 		Filename:   path,
 		MaxSize:    cfg.MaxSizeMB,
 		MaxBackups: cfg.MaxBackups,
@@ -65,6 +69,7 @@ func newRollingFile(path string, cfg appconfig.LogFileConfig) io.Writer {
 
 // parseLevel traduce el texto configurado en TOML al enum interno.
 func parseLevel(level string) Level {
+	// Limpiamos el texto para tolerar diferencias menores de formato en config.
 	switch strings.ToUpper(strings.TrimSpace(level)) {
 	case "DEBUG":
 		return LevelDebug

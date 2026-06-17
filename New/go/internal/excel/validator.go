@@ -52,10 +52,14 @@ func ValidateStructure(format FileFormat, headers []HeaderCell) (map[string]int,
 	duplicates := make(map[string]int)
 
 	for _, header := range headers {
+		// Si el mismo nombre normalizado ya apareció, lo marcamos como duplicado
+		// y no pisamos la primera posición encontrada.
 		if _, exists := headerIndexByKey[header.Normalized]; exists {
 			duplicates[header.Normalized]++
 			continue
 		}
+		// Guardamos la posición real de la columna para reutilizarla después
+		// cuando haya que leer celdas por nombre lógico.
 		headerIndexByKey[header.Normalized] = header.Index
 	}
 
@@ -64,6 +68,8 @@ func ValidateStructure(format FileFormat, headers []HeaderCell) (map[string]int,
 	// Revisamos una por una las columnas que el formato exige.
 	for _, required := range requiredColumns {
 		key := NormalizeHeader(required)
+		// Si no encontramos una columna obligatoria, el archivo puede existir
+		// pero no tiene el layout que espera el proceso.
 		if _, ok := headerIndexByKey[key]; !ok {
 			errors = append(errors, StructureError{
 				Type:    "ESTRUCTURA",
@@ -76,6 +82,8 @@ func ValidateStructure(format FileFormat, headers []HeaderCell) (map[string]int,
 
 	// También informamos duplicados porque después harían ambiguo el mapping.
 	for normalizedKey, count := range duplicates {
+		// Reportamos cuántas veces extra aparece para que sea más fácil corregir
+		// el workbook original.
 		errors = append(errors, StructureError{
 			Type:    "ESTRUCTURA",
 			Field:   normalizedKey,

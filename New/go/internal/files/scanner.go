@@ -34,6 +34,8 @@ func NewScanner(inputRoot string) *Scanner {
 // La salida no procesa nada todavía: solo arma `FileJob`s con la identidad
 // básica de cada archivo encontrado.
 func (s *Scanner) DiscoverProviderFiles(ctx context.Context, providers []domain.Provider) ([]domain.FileJob, error) {
+	// Leemos solo el primer nivel del input root. El resto del descenso ocurre
+	// recién dentro de cada provider válido.
 	entries, err := os.ReadDir(s.inputRoot)
 	if err != nil {
 		return nil, fmt.Errorf("read input root: %w", err)
@@ -74,6 +76,8 @@ func (s *Scanner) DiscoverProviderFiles(ctx context.Context, providers []domain.
 			continue
 		}
 
+		// Desde acá ya sabemos que estamos dentro de una carpeta de provider
+		// habilitado para esta corrida.
 		providerRoot := filepath.Join(s.inputRoot, entry.Name())
 		err = filepath.WalkDir(providerRoot, func(path string, d os.DirEntry, walkErr error) error {
 			if walkErr != nil {
@@ -94,6 +98,8 @@ func (s *Scanner) DiscoverProviderFiles(ctx context.Context, providers []domain.
 				return fmt.Errorf("compute relative path for %s: %w", path, relErr)
 			}
 
+			// El job no procesa todavía: solo deja listo el "qué archivo"
+			// y "a qué provider pertenece".
 			jobs = append(jobs, domain.FileJob{
 				ProviderID:    providerID,
 				ProviderName:  providerByID[providerID].Name,
@@ -108,6 +114,7 @@ func (s *Scanner) DiscoverProviderFiles(ctx context.Context, providers []domain.
 		}
 	}
 
+	// La lista sale plana para que el batch decida luego el orden de ejecución.
 	return jobs, nil
 }
 

@@ -25,6 +25,7 @@ import (
 //
 // Este es el punto de entrada principal del mapper.
 func MapRows(workbook Workbook) ([]MappedRow, error) {
+	// El formato detectado antes define qué DTO espera cada fila.
 	switch workbook.Format {
 	case FileFormatStockUpdate:
 		return mapStockUpdateRows(workbook), nil
@@ -41,6 +42,7 @@ func mapStockUpdateRows(workbook Workbook) []MappedRow {
 	rows := make([]MappedRow, 0, len(workbook.Rows))
 
 	for _, rawRow := range workbook.Rows {
+		// Arrancamos con una estructura vacía y la vamos completando.
 		mapped := MappedRow{
 			ExcelRowNumber: rawRow.ExcelRowNumber,
 			IsEmpty:        rawRow.IsEmpty,
@@ -57,6 +59,7 @@ func mapStockUpdateRows(workbook Workbook) []MappedRow {
 		sku := getCellValue(rawRow, workbook.HeaderIndexByKey, "SKU")
 		stock, stockErr := ParseFlexibleInt(getCellValue(rawRow, workbook.HeaderIndexByKey, "STOCK"))
 
+		// Guardamos el SKU aunque la fila tenga errores para poder identificarla.
 		mapped.SKU = sku
 		if sku == "" {
 			mapped.Issues = append(mapped.Issues, RowIssue{
@@ -75,7 +78,7 @@ func mapStockUpdateRows(workbook Workbook) []MappedRow {
 			})
 		}
 
-		// Solo construimos el DTO si la fila no tiene errores.
+		// Solo si todo salió bien construimos el DTO consumible por negocio.
 		if !mapped.HasErrors() {
 			mapped.StockUpdate = &StockUpdateRow{
 				SKU:   sku,
@@ -95,6 +98,8 @@ func mapFullImportRows(workbook Workbook) []MappedRow {
 	rows := make([]MappedRow, 0, len(workbook.Rows))
 
 	for _, rawRow := range workbook.Rows {
+		// Igual que en stock update, cada fila arranca como una estructura vacía
+		// que después puede terminar en DTO o en lista de issues.
 		mapped := MappedRow{
 			ExcelRowNumber: rawRow.ExcelRowNumber,
 			IsEmpty:        rawRow.IsEmpty,
@@ -122,6 +127,7 @@ func mapFullImportRows(workbook Workbook) []MappedRow {
 		mapped.SKU = sku
 
 		// Después validamos los textos obligatorios.
+		// Esta etapa solo mira presencia de datos, no parsea números todavía.
 		validateRequiredText(&mapped, "SKU", sku)
 		validateRequiredText(&mapped, "NOMBRE", name)
 		validateRequiredText(&mapped, "MARCA", brand)
@@ -145,6 +151,7 @@ func mapFullImportRows(workbook Workbook) []MappedRow {
 		mapped.Issues = append(mapped.Issues, imageIssues...)
 
 		// La oferta es opcional. Si viene y es válida, puede sobrescribir `Price`.
+		// También guardamos el valor original para list price y net price.
 		var offerPtr *float64
 		offerApplied := false
 		listPrice := price
@@ -167,6 +174,7 @@ func mapFullImportRows(workbook Workbook) []MappedRow {
 		}
 
 		// Regla heredada: el Excel trae peso en gramos y la API consume kilogramos.
+		// Si el peso ya falló al parsear, dejamos el valor final en cero.
 		weightKilograms := 0.0
 		if weightOK {
 			weightKilograms = roundToTwo(weightGrams) / 1000
@@ -185,6 +193,8 @@ func mapFullImportRows(workbook Workbook) []MappedRow {
 
 		// El DTO final solo se arma si la fila quedó libre de errores.
 		if !mapped.HasErrors() {
+			// A esta altura ya tenemos todo lo necesario para dejar la fila
+			// lista para la capa de negocio.
 			mapped.FullImport = &FullImportRow{
 				SKU:              sku,
 				Name:             name,
@@ -222,6 +232,7 @@ func mapFullImportRows(workbook Workbook) []MappedRow {
 }
 
 func validateRequiredText(mapped *MappedRow, field, value string) {
+	// Si hay contenido, no agregamos issue.
 	if value != "" {
 		return
 	}
@@ -318,6 +329,7 @@ func normalizeImageURLs(raw string) ([]string, []RowIssue) {
 		return nil, nil
 	}
 
+	// El legado usa `&` como separador de múltiples imágenes en una sola celda.
 	segments := strings.Split(clean, "&")
 	urls := make([]string, 0, len(segments))
 	issues := make([]RowIssue, 0)
@@ -329,6 +341,7 @@ func normalizeImageURLs(raw string) ([]string, []RowIssue) {
 			continue
 		}
 
+		// Cada URL inválida genera issue, pero no rompe el análisis del resto.
 		if err := validateImageURL(value); err != nil {
 			issues = append(issues, RowIssue{
 				Severity: "ERROR",
@@ -373,9 +386,12 @@ func validateImageURL(value string) error {
 func getCellValue(row RawRow, headerIndexByKey map[string]int, field string) string {
 	index, ok := headerIndexByKey[NormalizeHeader(field)]
 	if !ok {
+		// Si la columna no existe en el índice, devolvemos vacío y dejamos
+		// que la validación superior lo trate.
 		return ""
 	}
 	if index >= len(row.Values) {
+		// Esto protege contra filas más cortas que el header.
 		return ""
 	}
 

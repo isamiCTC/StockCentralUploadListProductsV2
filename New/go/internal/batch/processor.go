@@ -47,6 +47,7 @@ func NewProcessor(
 
 // Run ejecuta una corrida completa del batch de principio a fin.
 func (p *Processor) Run(ctx context.Context) (domain.BatchResult, error) {
+	// Desde este momento empezamos a medir la corrida global.
 	result := domain.BatchResult{StartedAt: time.Now()}
 
 	// Paso 1. Traer providers válidos desde la fuente configurada.
@@ -70,7 +71,7 @@ func (p *Processor) Run(ctx context.Context) (domain.BatchResult, error) {
 	result.ProvidersSeen = len(providers)
 	result.ProvidersActive = len(providers)
 
-	// Registramos cuántos providers quedaron habilitados para esta corrida.
+	// Dejamos auditado cuántos providers participaron efectivamente.
 	p.logs.Summary.Info("providers-loaded",
 		logging.Int("catalog_id", p.cfg.CatalogID),
 		logging.Int("provider_integrator_id", p.cfg.ProviderIntegratorID),
@@ -87,14 +88,16 @@ func (p *Processor) Run(ctx context.Context) (domain.BatchResult, error) {
 	p.logs.Summary.Info("files-discovered", logging.Int("count", len(jobs)))
 
 	// Paso 3. Procesar cada archivo de forma secuencial.
-	// La concurrencia real va a vivir más adelante dentro de cada archivo,
-	// a nivel fila.
+	// Elegimos secuencialidad por archivo para que el movimiento de archivos,
+	// logs y resultados finales sean más predecibles.
+	// La concurrencia real vive dentro de cada archivo, a nivel fila.
 	for _, job := range jobs {
+		// Cada archivo se procesa completo y devuelve un resumen propio.
 		fileResult, fileErr := p.fileProcessor.Process(ctx, job)
 		result.Files = append(result.Files, fileResult)
 
 		if fileErr != nil {
-			// Si un archivo falla, lo contamos y lo registramos.
+			// Si el archivo explotó a nivel técnico, lo contamos aparte.
 			result.FilesFailed++
 			p.logs.Summary.Error("file-failed",
 				logging.Int("provider_id", job.ProviderID),
@@ -110,7 +113,8 @@ func (p *Processor) Run(ctx context.Context) (domain.BatchResult, error) {
 			continue
 		}
 
-		// Si salió bien, incrementamos el contador de procesados.
+		// Un archivo puede terminar con filas en error, pero igual contar como
+		// "procesado" si el flujo técnico del archivo terminó.
 		result.FilesProcessed++
 	}
 

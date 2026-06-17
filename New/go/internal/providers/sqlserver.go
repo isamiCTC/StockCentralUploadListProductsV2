@@ -24,6 +24,7 @@ type SQLServer struct {
 // NewSQLServer abre la conexión y hace un ping inicial.
 // Si el ping falla, devolvemos error y cerramos inmediatamente el handle.
 func NewSQLServer(cfg appconfig.DatabaseConfig, connectionString string) (*SQLServer, error) {
+	// `sql.Open` no valida conectividad todavía; solo arma el handle.
 	database, err := sql.Open("sqlserver", connectionString)
 	if err != nil {
 		return nil, fmt.Errorf("open sqlserver connection: %w", err)
@@ -34,10 +35,12 @@ func NewSQLServer(cfg appconfig.DatabaseConfig, connectionString string) (*SQLSe
 		timeoutSeconds: cfg.TimeoutSeconds,
 	}
 
+	// El ping inicial confirma que la conexión realmente es usable.
 	pingCtx, cancel := context.WithTimeout(context.Background(), time.Duration(cfg.TimeoutSeconds)*time.Second)
 	defer cancel()
 
 	if err := database.PingContext(pingCtx); err != nil {
+		// Si no podemos usarla, cerramos enseguida para no dejar recursos abiertos.
 		_ = database.Close()
 		return nil, fmt.Errorf("ping sqlserver: %w", err)
 	}
@@ -53,6 +56,8 @@ func (s *SQLServer) Close() error {
 // QueryContext ejecuta una query usando el timeout configurado en TOML.
 // Esto evita dejar operaciones de DB colgadas indefinidamente.
 func (s *SQLServer) QueryContext(ctx context.Context, query string, args ...any) (*sql.Rows, error) {
+	// Cada query hereda el contexto padre, pero además suma el timeout propio
+	// configurado para base.
 	queryCtx, cancel := context.WithTimeout(ctx, time.Duration(s.timeoutSeconds)*time.Second)
 	defer cancel()
 

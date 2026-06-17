@@ -37,6 +37,7 @@ func NewResolver(client *products.Client) *Resolver {
 
 // ResolveBySubcategory aplica la cadena completa de resolución.
 func (r *Resolver) ResolveBySubcategory(ctx context.Context, providerID int, subcategory string) (ResolutionResult, error) {
+	// Primer intento: mapping propio del proyecto, sin salir a la red.
 	if branch, ok := hardcodedBranches[normalizeCategoryKey(subcategory)]; ok {
 		return ResolutionResult{
 			Branch: branch,
@@ -44,6 +45,7 @@ func (r *Resolver) ResolveBySubcategory(ctx context.Context, providerID int, sub
 		}, nil
 	}
 
+	// Segundo intento: preguntar a la API por la primera coincidencia útil.
 	branch, _, err := r.client.ResolveFirstSubcategory(ctx, providerID, subcategory)
 	if err == nil && branch != nil {
 		return ResolutionResult{
@@ -52,6 +54,7 @@ func (r *Resolver) ResolveBySubcategory(ctx context.Context, providerID int, sub
 		}, nil
 	}
 
+	// Último recurso: mandar todo a la categoría comodín "Varios".
 	return ResolutionResult{
 		Branch: fallbackBranch,
 		Source: ResolutionSourceFallback,

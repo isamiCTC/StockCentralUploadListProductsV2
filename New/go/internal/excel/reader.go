@@ -90,6 +90,8 @@ func (r *Reader) Read(path string) (Workbook, error) {
 	headers := buildHeaders(rows[0])
 	format := DetectFormat(len(headers))
 
+	// Esta validación es deliberadamente gruesa: primero detectamos si el
+	// archivo entra en algún formato conocido, y recién después refinamos.
 	// Si la cantidad de columnas no encaja en ninguno de los formatos válidos,
 	// no intentamos seguir con una validación más fina.
 	if format == FileFormatUnsupported {
@@ -114,6 +116,7 @@ func (r *Reader) Read(path string) (Workbook, error) {
 	// columnas y los posibles errores estructurales detallados.
 	headerIndexByKey, structureErrors := ValidateStructure(format, headers)
 
+	// El workbook que sale de acá ya está listo para pasar al mapper.
 	return Workbook{
 		Path:             path,
 		SheetName:        sheetName,
@@ -133,6 +136,8 @@ func (r *Reader) Read(path string) (Workbook, error) {
 func buildHeaders(values []string) []HeaderCell {
 	headers := make([]HeaderCell, 0, len(values))
 	for index, value := range values {
+		// Guardamos tanto la forma "visible" como la forma normalizada
+		// para comparar headers de manera robusta.
 		clean := NormalizeCell(value)
 		headers = append(headers, HeaderCell{
 			Index:      index,
@@ -165,6 +170,7 @@ func buildRows(sourceRows [][]string) []RawRow {
 			}
 		}
 
+		// `index + 2` porque sourceRows ya no incluye el header y Excel arranca en 1.
 		rows = append(rows, RawRow{
 			ExcelRowNumber: index + 2,
 			Values:         normalizedValues,

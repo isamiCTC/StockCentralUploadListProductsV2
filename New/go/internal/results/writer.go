@@ -35,6 +35,8 @@ func (w *Writer) WriteRowResults(path string, rows []domain.RowResult) error {
 	const sheet = "Resultados"
 	file.SetSheetName(file.GetSheetName(0), sheet)
 
+	// Estos encabezados buscan que negocio pueda leer el archivo sin conocer
+	// detalles internos del proceso.
 	headers := []string{
 		"Fila Excel",
 		"SKU",
@@ -52,6 +54,7 @@ func (w *Writer) WriteRowResults(path string, rows []domain.RowResult) error {
 		}
 	}
 
+	// `dataRow` lleva la fila real dentro del Excel de salida.
 	dataRow := 2
 	for _, row := range rows {
 		// Las filas SKIPPED no se escriben para que el archivo final quede
@@ -72,6 +75,7 @@ func (w *Writer) WriteRowResults(path string, rows []domain.RowResult) error {
 			row.Detail,
 		}
 
+		// Volcamos la fila completa columna por columna para mantener un orden fijo.
 		for col, value := range values {
 			cell, _ := excelize.CoordinatesToCellName(col+1, excelRow)
 			if err := file.SetCellValue(sheet, cell, value); err != nil {
@@ -82,6 +86,7 @@ func (w *Writer) WriteRowResults(path string, rows []domain.RowResult) error {
 		dataRow++
 	}
 
+	// El estilo se aplica al final, cuando ya sabemos hasta qué fila escribimos.
 	if err := w.styleResultsSheet(file, sheet, dataRow-1); err != nil {
 		return err
 	}
@@ -96,6 +101,7 @@ func (w *Writer) WriteStructureErrors(path string, errors []excel.StructureError
 	const sheet = "ErroresEstructura"
 	file.SetSheetName(file.GetSheetName(0), sheet)
 
+	// Esta hoja es más corta: apunta a explicar por qué el layout fue rechazado.
 	headers := []string{"Campo", "Mensaje", "Detalle"}
 	for idx, header := range headers {
 		cell, _ := excelize.CoordinatesToCellName(idx+1, 1)
@@ -108,6 +114,7 @@ func (w *Writer) WriteStructureErrors(path string, errors []excel.StructureError
 		excelRow := idx + 2
 		values := []any{issue.Field, issue.Message, issue.Detail}
 
+		// Igual que en resultados, mantenemos una escritura explícita por columna.
 		for col, value := range values {
 			cell, _ := excelize.CoordinatesToCellName(col+1, excelRow)
 			if err := file.SetCellValue(sheet, cell, value); err != nil {
@@ -129,6 +136,7 @@ func (w *Writer) save(file *excelize.File, path string) error {
 		_ = file.Close()
 	}()
 
+	// Creamos la carpeta si todavía no existe para que SaveAs no falle por ruta.
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return fmt.Errorf("create result parent directory: %w", err)
 	}
@@ -152,6 +160,7 @@ func (w *Writer) adjustColumns(file *excelize.File, sheet string, _ []string) {
 
 // styleResultsSheet aplica solo el formato útil y sobrio para lectura humana.
 func (w *Writer) styleResultsSheet(file *excelize.File, sheet string, lastRow int) error {
+	// Header azul para que el usuario identifique rápido la zona de títulos.
 	headerStyle, err := file.NewStyle(&excelize.Style{
 		Font:      &excelize.Font{Bold: true, Color: "#FFFFFF"},
 		Fill:      excelize.Fill{Type: "pattern", Color: []string{"#1F4E78"}, Pattern: 1},
@@ -196,11 +205,13 @@ func (w *Writer) styleResultsSheet(file *excelize.File, sheet string, lastRow in
 		return fmt.Errorf("set results header style: %w", err)
 	}
 	if lastRow >= 2 {
+		// El cuerpo usa wrap text porque mensaje y detalle pueden ser largos.
 		if err := file.SetCellStyle(sheet, "A2", fmt.Sprintf("G%d", lastRow), textWrapStyle); err != nil {
 			return fmt.Errorf("set results body style: %w", err)
 		}
 	}
 
+	// Freeze y filtro ayudan a navegar archivos grandes sin perder contexto.
 	_ = file.SetPanes(sheet, &excelize.Panes{
 		Freeze:      true,
 		Split:       false,
@@ -215,6 +226,7 @@ func (w *Writer) styleResultsSheet(file *excelize.File, sheet string, lastRow in
 		statusCell := fmt.Sprintf("C%d", row)
 		value, _ := file.GetCellValue(sheet, statusCell)
 
+		// Solo coloreamos la celda de estado para que el archivo siga sobrio.
 		switch value {
 		case string(domain.RowStatusOK):
 			_ = file.SetCellStyle(sheet, statusCell, statusCell, okStyle)
@@ -231,6 +243,8 @@ func (w *Writer) styleResultsSheet(file *excelize.File, sheet string, lastRow in
 // styleStructureSheet aplica un formato sobrio y legible a la hoja de errores
 // estructurales para que el archivo sea fácil de leer por negocio.
 func (w *Writer) styleStructureSheet(file *excelize.File, sheet string, lastRow int) error {
+	// La hoja estructural usa otro color para diferenciarla visualmente
+	// del Excel de resultados por fila.
 	headerStyle, err := file.NewStyle(&excelize.Style{
 		Font:      &excelize.Font{Bold: true, Color: "#FFFFFF"},
 		Fill:      excelize.Fill{Type: "pattern", Color: []string{"#7F6000"}, Pattern: 1},
@@ -256,6 +270,8 @@ func (w *Writer) styleStructureSheet(file *excelize.File, sheet string, lastRow 
 		}
 	}
 
+	// Igual que en resultados, dejamos columnas, freeze y filtro listos
+	// para lectura humana desde Excel.
 	_ = file.SetColWidth(sheet, "A", "A", 20)
 	_ = file.SetColWidth(sheet, "B", "B", 34)
 	_ = file.SetColWidth(sheet, "C", "C", 70)

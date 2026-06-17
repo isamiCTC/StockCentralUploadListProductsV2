@@ -43,6 +43,7 @@ func MustLoad(settingsPath, envPath string) Config {
 // 4. valida los campos obligatorios
 func Load(settingsPath, envPath string) (Config, error) {
 	var fc fileConfig
+	// El TOML contiene toda la configuración "visible" y versionable.
 	if _, err := toml.DecodeFile(settingsPath, &fc); err != nil {
 		return Config{}, fmt.Errorf("decode appsettings.toml: %w", err)
 	}
@@ -51,6 +52,7 @@ func Load(settingsPath, envPath string) (Config, error) {
 	// tratamos como fatal porque las variables podrían venir del entorno.
 	_ = godotenv.Load(envPath)
 
+	// Unimos config de archivo con secretos de variables de entorno.
 	cfg := Config{
 		App:           fc.App,
 		Batch:         fc.Batch,
@@ -66,6 +68,7 @@ func Load(settingsPath, envPath string) (Config, error) {
 		},
 	}
 
+	// Validamos antes de devolver para cortar problemas en bootstrap.
 	if err := validate(cfg); err != nil {
 		return Config{}, err
 	}
@@ -76,6 +79,7 @@ func Load(settingsPath, envPath string) (Config, error) {
 // validate revisa únicamente condiciones de arranque.
 // No valida todavía reglas de negocio ni detalles de Excel.
 func validate(cfg Config) error {
+	// Primero validamos identidad mínima y rutas base del proceso.
 	if cfg.App.Name == "" {
 		return fmt.Errorf("missing app.name")
 	}
@@ -97,12 +101,14 @@ func validate(cfg Config) error {
 	if cfg.ProductsAPI.BaseURL == "" {
 		return fmt.Errorf("missing products_api.base_url")
 	}
+	// Después validamos secretos mínimos para DB y API de productos.
 	if cfg.Secrets.DBConnectionString == "" {
 		return fmt.Errorf("missing DB_CONNECTION_STRING in .env")
 	}
 	if cfg.Secrets.ProductsAPIToken == "" {
 		return fmt.Errorf("missing PRODUCTS_API_TOKEN in .env")
 	}
+	// SendGrid solo es obligatorio si el módulo de notificaciones está activo.
 	if cfg.Notifications.Enabled {
 		if cfg.Notifications.FromEmail == "" {
 			return fmt.Errorf("missing notifications.from_email")

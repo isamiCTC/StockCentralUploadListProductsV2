@@ -32,23 +32,27 @@ func (c *SendGridClient) SendMail(ctx context.Context, fromEmail string, to []st
 		return fmt.Errorf("sendgrid recipients list is empty")
 	}
 
+	// El adjunto se lee y codifica antes de armar el mail.
 	attachmentContent, attachmentName, err := readAttachment(attachmentPath)
 	if err != nil {
 		return err
 	}
 
+	// Armamos el sobre base del mensaje.
 	from := sgmail.NewEmail("", fromEmail)
 	message := sgmail.NewV3Mail()
 	message.SetFrom(from)
 	message.Subject = subject
 	message.AddContent(sgmail.NewContent("text/plain", body))
 
+	// Todos los destinatarios se agregan dentro de una única personalización.
 	personalization := sgmail.NewPersonalization()
 	for _, recipient := range to {
 		personalization.AddTos(sgmail.NewEmail("", recipient))
 	}
 	message.AddPersonalizations(personalization)
 
+	// El servicio actual siempre adjunta un único Excel.
 	message.AddAttachment(&sgmail.Attachment{
 		Content:     attachmentContent,
 		Type:        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
@@ -56,15 +60,18 @@ func (c *SendGridClient) SendMail(ctx context.Context, fromEmail string, to []st
 		Disposition: "attachment",
 	})
 
+	// Recién acá convertimos el mensaje en una request HTTP concreta.
 	request := sg.GetRequest(c.apiKey, "/v3/mail/send", "https://api.sendgrid.com")
 	request.Method = "POST"
 	request.Body = sgmail.GetRequestBody(message)
 
+	// El contexto permite cancelar o cortar por timeout desde arriba.
 	response, err := sg.MakeRequestWithContext(ctx, request)
 	if err != nil {
 		return fmt.Errorf("sendgrid request failed: %w", err)
 	}
 
+	// Cualquier status no-2xx se trata como fallo explícito de envío.
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
 		return fmt.Errorf("sendgrid returned status %d: %s", response.StatusCode, response.Body)
 	}
@@ -74,6 +81,7 @@ func (c *SendGridClient) SendMail(ctx context.Context, fromEmail string, to []st
 
 // readAttachment levanta el archivo final y lo devuelve en base64.
 func readAttachment(path string) (contentBase64, filename string, err error) {
+	// Leemos el archivo completo porque SendGrid espera el adjunto inline.
 	data, readErr := os.ReadFile(path)
 	if readErr != nil {
 		return "", "", fmt.Errorf("read notification attachment %s: %w", path, readErr)

@@ -70,12 +70,15 @@ func (l *Logger) Error(msg string, fields ...Field) {
 // log aplica el filtro de nivel, formatea la línea y la escribe protegida
 // por mutex para no mezclar salidas concurrentes.
 func (l *Logger) log(level Level, msg string, fields ...Field) {
+	// Si el nivel no pasa el filtro configurado, cortamos acá y evitamos
+	// trabajo innecesario de formateo/escritura.
 	if !enabled(l.minLevel, level) {
 		return
 	}
 
 	line := formatLine(time.Now(), level, msg, fields...)
 
+	// El mutex evita que dos goroutines mezclen texto dentro de una misma línea.
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	_, _ = io.WriteString(l.writer, line)
@@ -90,6 +93,7 @@ func enabled(minLevel, current Level) bool {
 		LevelError: 4,
 	}
 
+	// Cuanto mayor es el número, más importante es el nivel.
 	return order[current] >= order[minLevel]
 }
 
@@ -107,6 +111,8 @@ func formatLine(ts time.Time, level Level, msg string, fields ...Field) string {
 	if len(fields) > 0 {
 		b.WriteString(" | ")
 		for i, field := range fields {
+			// Separamos fields con espacios para que sigan siendo legibles pero
+			// queden en una sola línea fácil de filtrar.
 			if i > 0 {
 				b.WriteString(" ")
 			}

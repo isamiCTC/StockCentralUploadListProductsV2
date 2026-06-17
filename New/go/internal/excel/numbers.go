@@ -34,6 +34,7 @@ func ParseFlexibleFloat(raw string) (float64, error) {
 		return 0, fmt.Errorf("empty numeric value")
 	}
 
+	// Quitamos espacios internos para tolerar variantes como "1 234,56".
 	value = strings.ReplaceAll(value, " ", "")
 	lastDot := strings.LastIndex(value, ".")
 	lastComma := strings.LastIndex(value, ",")
@@ -49,17 +50,21 @@ func ParseFlexibleFloat(raw string) (float64, error) {
 			value = strings.ReplaceAll(value, ",", ".")
 		}
 	case lastComma >= 0:
+		// Si solo hay una coma, asumimos separador decimal.
+		// Si hay varias, asumimos que son miles.
 		if strings.Count(value, ",") == 1 {
 			value = strings.ReplaceAll(value, ",", ".")
 		} else {
 			value = strings.ReplaceAll(value, ",", "")
 		}
 	case lastDot >= 0:
+		// Varias apariciones de punto se interpretan como miles.
 		if strings.Count(value, ".") > 1 {
 			value = strings.ReplaceAll(value, ".", "")
 		}
 	}
 
+	// Una vez normalizado, ya podemos usar el parser estándar de Go.
 	parsed, err := strconv.ParseFloat(value, 64)
 	if err != nil {
 		return 0, fmt.Errorf("parse numeric value %q: %w", raw, err)

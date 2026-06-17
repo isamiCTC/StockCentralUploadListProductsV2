@@ -39,11 +39,13 @@ func NewDownloader(timeout time.Duration) *Downloader {
 
 // DownloadAsBase64 descarga una imagen por URL y la devuelve serializada.
 func (d *Downloader) DownloadAsBase64(ctx context.Context, imageURL string) (string, error) {
+	// El contexto permite cortar descargas largas desde la fila que la disparó.
 	request, err := http.NewRequestWithContext(ctx, http.MethodGet, imageURL, nil)
 	if err != nil {
 		return "", fmt.Errorf("build image request for %q: %w", imageURL, err)
 	}
 
+	// Recién acá salimos a la red.
 	response, err := d.httpClient.Do(request)
 	if err != nil {
 		return "", fmt.Errorf("download image %q: %w", imageURL, err)
@@ -59,15 +61,20 @@ func (d *Downloader) DownloadAsBase64(ctx context.Context, imageURL string) (str
 		return "", fmt.Errorf("read image body %q: %w", imageURL, err)
 	}
 
+	// Primer intento: si Go puede decodificarla como imagen estándar,
+	// devolvemos exactamente esos bytes.
 	if _, _, err := image.Decode(bytes.NewReader(data)); err == nil {
 		return base64.StdEncoding.EncodeToString(data), nil
 	}
 
+	// Segundo intento: si no se pudo decodificar arriba, probamos tratarla
+	// como WebP y convertirla a JPEG.
 	webpImage, err := webp.Decode(bytes.NewReader(data))
 	if err != nil {
 		return "", fmt.Errorf("decode image %q as webp: %w", imageURL, err)
 	}
 
+	// El JPEG resultante es el que finalmente se serializa a base64.
 	var encoded bytes.Buffer
 	if err := jpeg.Encode(&encoded, webpImage, &jpeg.Options{Quality: 90}); err != nil {
 		return "", fmt.Errorf("encode webp image %q as jpeg: %w", imageURL, err)
