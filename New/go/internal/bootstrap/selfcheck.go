@@ -10,6 +10,10 @@ import (
 	"stockcentraluploadlistproductsv2/internal/providers"
 )
 
+// Este archivo implementa el modo `--self-check`.
+// Su responsabilidad es validar que configuración, carpetas, logging y SQL
+// estén listos antes de intentar correr el batch real.
+
 // SelfCheckResult representa un chequeo individual del modo self-check.
 type SelfCheckResult struct {
 	Name   string

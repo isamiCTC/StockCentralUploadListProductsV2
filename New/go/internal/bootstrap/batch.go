@@ -18,6 +18,10 @@ import (
 	"stockcentraluploadlistproductsv2/internal/results"
 )
 
+// Este archivo concentra el arranque técnico del modo batch.
+// Su responsabilidad es construir el runtime completo del proceso y dejar
+// centralizado el logging de inicio y cierre de la corrida.
+
 // BatchRuntime agrupa el batch ya construido y cómo cerrar sus recursos.
 type BatchRuntime struct {
 	Processor *batch.Processor
