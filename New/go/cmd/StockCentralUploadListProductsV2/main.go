@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"flag"
 	"fmt"
 	"os"
 	"time"
@@ -17,6 +18,7 @@ import (
 	"stockcentraluploadlistproductsv2/internal/products"
 	"stockcentraluploadlistproductsv2/internal/providers"
 	"stockcentraluploadlistproductsv2/internal/results"
+	"stockcentraluploadlistproductsv2/internal/selfcheck"
 )
 
 // main es el punto de entrada del batch.
@@ -26,11 +28,51 @@ import (
 // La idea es que alguien nuevo pueda leer este archivo de arriba hacia abajo
 // y entender el flujo general completo.
 func main() {
+	runMode := flag.Bool("run", false, "run the batch process")
+	selfCheckMode := flag.Bool("self-check", false, "run environment checks and exit")
+	settingsPath := flag.String("settings", "config/appsettings.toml", "path to appsettings.toml")
+	envPath := flag.String("env", "config/.env", "path to .env file")
+	flag.Parse()
+
+	// El binario pide intención explícita para evitar que un doble click
+	// o una ejecución accidental disparen el proceso completo.
+	if *runMode && *selfCheckMode {
+		fmt.Fprintln(os.Stdout, "Choose only one mode: --run or --self-check.")
+		flag.Usage()
+		os.Exit(1)
+	}
+
+	if *selfCheckMode {
+		os.Exit(runSelfCheck(*settingsPath, *envPath))
+	}
+
+	if !*runMode {
+		fmt.Fprintln(os.Stdout, "No mode selected. Use --run to process files or --self-check to validate the environment.")
+		flag.Usage()
+		os.Exit(1)
+	}
+
+	os.Exit(runBatch(*settingsPath, *envPath))
+}
+
+// runSelfCheck ejecuta verificaciones técnicas del ambiente y termina.
+// No procesa archivos ni dispara integraciones de negocio.
+func runSelfCheck(settingsPath, envPath string) int {
+	if err := selfcheck.Run(settingsPath, envPath, os.Stdout); err != nil {
+		return 1
+	}
+
+	return 0
+}
+
+// runBatch conserva el flujo principal del binario cuando no se pidió
+// explícitamente el modo self-check.
+func runBatch(settingsPath, envPath string) int {
 	// Creamos un contexto base para toda la corrida del proceso.
 	ctx := context.Background()
 
 	// Cargamos primero la configuración para saber cómo inicializar el resto.
-	cfg := appconfig.MustLoad("config/appsettings.toml", "config/.env")
+	cfg := appconfig.MustLoad(settingsPath, envPath)
 
 	// Levantamos el sistema de logging lo antes posible para poder registrar
 	// cualquier error de bootstrap que ocurra después.
@@ -42,7 +84,7 @@ func main() {
 	if err != nil {
 		logs.Summary.Error("sqlserver-bootstrap-failed", logging.String("error", err.Error()))
 		logs.Detail.Error("sqlserver-bootstrap-failed", logging.String("error", err.Error()))
-		os.Exit(1)
+		return 1
 	}
 
 	// Cerramos la conexión al terminar la corrida, incluso si luego falla algo.
@@ -134,7 +176,7 @@ func main() {
 	if err != nil {
 		logs.Summary.Error("batch-failed", logging.String("error", err.Error()))
 		logs.Detail.Error("batch-failed", logging.String("error", err.Error()))
-		os.Exit(1)
+		return 1
 	}
 
 	// Si todo terminó, dejamos un cierre resumido en summary y otro más técnico
@@ -150,4 +192,6 @@ func main() {
 		logging.String("finished_at", result.FinishedAt.Format("2006-01-02 15:04:05")),
 		logging.String("duration", fmt.Sprintf("%s", result.FinishedAt.Sub(result.StartedAt))),
 	)
+
+	return 0
 }

@@ -45,7 +45,7 @@ El flujo principal de V2 se reparte entre estos archivos:
 ### Entry point y orquestación
 
 1. [`go/cmd/StockCentralUploadListProductsV2/main.go`](/home/nacho/Downloads/SCUploadListProducts/go/cmd/StockCentralUploadListProductsV2/main.go)
-   Punto de entrada. Solo orquesta dependencias y dispara la corrida.
+   Punto de entrada. Decide el modo (`--run` o `--self-check`) y orquesta la acción elegida.
 
 2. [`go/internal/batch/processor.go`](/home/nacho/Downloads/SCUploadListProducts/go/internal/batch/processor.go)
    Orquestador principal del batch completo.
@@ -144,30 +144,32 @@ El flujo principal de V2 se reparte entre estos archivos:
 
 Hoy la V2 hace esto:
 
-1. arranca;
-2. carga TOML y `.env`;
-3. inicializa logging;
-4. abre SQL Server;
-5. ejecuta el SP de providers habilitados;
-6. descubre archivos `.xlsx` únicamente dentro de carpetas válidas de providers;
-7. arma un `FileJob` por archivo;
-8. procesa cada archivo de manera secuencial;
-9. mueve el archivo a `processing`;
-10. lee la primera hoja del Excel;
-11. detecta el formato por cantidad de columnas;
-12. valida estructura con matching laxo de headers;
-13. si la estructura falla, genera `ErroresEstructura`, mueve a `processed` y notifica;
-14. si la estructura es válida, mapea filas;
-15. lanza un worker pool fijo por fila;
-16. trata cada fila como una transacción lógica completa;
-17. para archivos de 2 columnas, sincroniza stock;
-18. para archivos de 19 columnas, resuelve categoría, arma payload, hace upsert y opcionalmente sincroniza imágenes;
-19. junta todos los resultados;
-20. los ordena por número de fila;
-21. mueve el original a `processed`;
-22. escribe un Excel `Resultados`;
-23. manda mail con el adjunto correspondiente;
-24. devuelve un resumen global del batch.
+1. arranca el binario;
+2. espera un modo explícito;
+3. si recibe `--self-check`, valida config, carpetas, escritura y SQL Server, e informa el resultado;
+4. si recibe `--run`, carga TOML y `.env`;
+5. inicializa logging;
+6. abre SQL Server;
+7. ejecuta el SP de providers habilitados;
+8. descubre archivos `.xlsx` únicamente dentro de carpetas válidas de providers;
+9. arma un `FileJob` por archivo;
+10. procesa cada archivo de manera secuencial;
+11. mueve el archivo a `processing`;
+12. lee la primera hoja del Excel;
+13. detecta el formato por cantidad de columnas;
+14. valida estructura con matching laxo de headers;
+15. si la estructura falla, genera `ErroresEstructura`, mueve a `processed` y notifica;
+16. si la estructura es válida, mapea filas;
+17. lanza un worker pool fijo por fila;
+18. trata cada fila como una transacción lógica completa;
+19. para archivos de 2 columnas, sincroniza stock;
+20. para archivos de 19 columnas, resuelve categoría, arma payload, hace upsert y opcionalmente sincroniza imágenes;
+21. junta todos los resultados;
+22. los ordena por número de fila;
+23. mueve el original a `processed`;
+24. escribe un Excel `Resultados`;
+25. manda mail con el adjunto correspondiente;
+26. devuelve un resumen global del batch.
 
 ---
 
@@ -202,12 +204,23 @@ Todo empieza en [`main.go`](/home/nacho/Downloads/SCUploadListProducts/go/cmd/St
 
 ### Responsabilidad de `main`
 
-`main` fue dejado deliberadamente como orquestador puro. No contiene helpers locales ni lógica de negocio distribuida.
+`main` fue dejado deliberadamente como orquestador puro. No contiene lógica de negocio del batch.
 
 Su secuencia es:
 
+1. define flags de ejecución;
+2. espera que el usuario elija `--run` o `--self-check`;
+3. si recibe ambos flags, corta y muestra ayuda;
+4. si no recibe ninguno, corta y muestra ayuda;
+5. si recibe `--self-check`, delega a `runSelfCheck`;
+6. si recibe `--run`, delega a `runBatch`.
+
+### Modo `--run`
+
+Cuando se elige `--run`, la secuencia es:
+
 1. crea `context.Background()`;
-2. carga config con `MustLoad("config/appsettings.toml", "config/.env")`;
+2. carga config con `MustLoad`;
 3. inicializa logging;
 4. abre SQL Server;
 5. construye repositorio de providers;
@@ -226,6 +239,24 @@ Su secuencia es:
 18. si falla, termina con exit code `1`;
 19. si sale bien, loguea el resumen final.
 
+### Modo `--self-check`
+
+Cuando se elige `--self-check`, el proceso no toca Excels ni corre el batch.
+
+En cambio:
+
+1. revisa que `appsettings.toml` exista y se pueda abrir;
+2. revisa que el `.env` exista y se pueda leer;
+3. intenta cargar la configuración real;
+4. valida el bloque de logging;
+5. revisa acceso de lectura a `input_root`;
+6. prueba escritura real en `processing_root`;
+7. prueba escritura real en `processed_root`;
+8. prueba escritura real en la carpeta de logs;
+9. intenta abrir SQL Server y hacer ping;
+10. imprime una línea `OK` o `FAIL` por cada chequeo;
+11. devuelve exit code `1` si alguno falla.
+
 ### Qué no hace `main`
 
 No:
@@ -238,6 +269,9 @@ No:
 - ni resuelve categorías.
 
 Todo eso queda delegado.
+
+El único cambio respecto de versiones anteriores es que ahora `main` sí decide
+explícitamente el modo de ejecución para evitar arranques accidentales del `.exe`.
 
 ---
 
@@ -288,6 +322,31 @@ Y además, si las notificaciones están habilitadas:
 
 - `notifications.from_email`
 - `SENDGRID_API_KEY`
+
+### Self-check operativo
+
+Además de la validación mínima del loader, hoy existe un modo `--self-check`
+que hace verificaciones más "de ambiente" antes de correr nada.
+
+Ese modo confirma:
+
+- que `appsettings.toml` exista y se pueda abrir;
+- que `.env` exista y se pueda leer;
+- que la configuración completa cargue;
+- que la carpeta de logs esté bien configurada;
+- que `input_root` se pueda leer;
+- que `processing_root` se pueda crear y usar para escribir;
+- que `processed_root` se pueda crear y usar para escribir;
+- que la conexión a SQL Server responda.
+
+La validación de escritura no se limita a mirar si la carpeta existe:
+
+- intenta crear un archivo temporal;
+- escribe contenido;
+- cierra el archivo;
+- y lo borra.
+
+Eso da una comprobación más realista de permisos que un simple `os.Stat`.
 
 ### Parámetros operativos actuales importantes
 
@@ -2000,42 +2059,44 @@ Las salta limpiamente.
 Esta es la secuencia end-to-end real de la V2 hoy:
 
 1. arranca el binario;
-2. carga `appsettings.toml`;
-3. intenta cargar `.env`;
-4. valida configuración mínima;
-5. levanta `summary` y `detail`;
-6. abre SQL Server y hace ping;
-7. crea repositorio de providers;
-8. ejecuta el SP de providers habilitados;
-9. ordena providers por ID;
-10. escanea `input_root`;
-11. conserva solo carpetas numéricas cuyo ID exista en el resultset del SP;
-12. dentro de cada provider válido, recorre recursivamente en busca de `.xlsx`;
-13. arma un `FileJob` por archivo;
-14. procesa cada archivo de a uno;
-15. calcula rutas derivadas;
-16. mueve el archivo a `processing`;
-17. abre el `.xlsx` con `excelize`;
-18. toma la primera hoja;
-19. detecta formato por cantidad de columnas;
-20. valida estructura con matching laxo;
-21. si la estructura falla:
-22. mueve el original a `processed`;
-23. genera `ErroresEstructura`;
-24. manda mail con ese adjunto;
-25. sigue al siguiente archivo;
-26. si la estructura es válida:
-27. mapea filas a DTOs;
-28. clasifica filas vacías, válidas o con issues;
-29. lanza el worker pool;
-30. cada worker toma una fila;
-31. si la fila es vacía -> `SKIPPED`;
-32. si la fila tiene issues -> `ERROR`;
-33. si es stock update:
-34. hace `GET` del producto;
-35. pisa stock;
-36. hace `PUT`;
-37. si es full import:
+2. espera un modo explícito;
+3. si se eligió `--self-check`, ejecuta solo verificaciones técnicas y termina;
+4. si se eligió `--run`, carga `appsettings.toml`;
+5. intenta cargar `.env`;
+6. valida configuración mínima;
+7. levanta `summary` y `detail`;
+8. abre SQL Server y hace ping;
+9. crea repositorio de providers;
+10. ejecuta el SP de providers habilitados;
+11. ordena providers por ID;
+12. escanea `input_root`;
+13. conserva solo carpetas numéricas cuyo ID exista en el resultset del SP;
+14. dentro de cada provider válido, recorre recursivamente en busca de `.xlsx`;
+15. arma un `FileJob` por archivo;
+16. procesa cada archivo de a uno;
+17. calcula rutas derivadas;
+18. mueve el archivo a `processing`;
+19. abre el `.xlsx` con `excelize`;
+20. toma la primera hoja;
+21. detecta formato por cantidad de columnas;
+22. valida estructura con matching laxo;
+23. si la estructura falla:
+24. mueve el original a `processed`;
+25. genera `ErroresEstructura`;
+26. manda mail con ese adjunto;
+27. sigue al siguiente archivo;
+28. si la estructura es válida:
+29. mapea filas a DTOs;
+30. clasifica filas vacías, válidas o con issues;
+31. lanza el worker pool;
+32. cada worker toma una fila;
+33. si la fila es vacía -> `SKIPPED`;
+34. si la fila tiene issues -> `ERROR`;
+35. si es stock update:
+36. hace `GET` del producto;
+37. pisa stock;
+38. hace `PUT`;
+39. si es full import:
 38. resuelve categoría desde subcategoría;
 39. arma payload API;
 40. intenta `PUT`;
