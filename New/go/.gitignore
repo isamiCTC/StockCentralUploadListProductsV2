@@ -1,0 +1,13 @@
+# Local Go caches
+.cache/
+
+# Local configuration
+config/.env
+config/appsettings.toml
+
+# Build outputs
+dist/
+
+# Coverage and temp files
+coverage.out
+*.test

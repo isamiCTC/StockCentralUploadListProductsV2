@@ -1,0 +1,120 @@
+package batch
+
+import (
+	"context"
+	"fmt"
+	"slices"
+	"time"
+
+	appconfig "stockcentraluploadlistproductsv2/internal/config"
+	"stockcentraluploadlistproductsv2/internal/domain"
+	"stockcentraluploadlistproductsv2/internal/files"
+	"stockcentraluploadlistproductsv2/internal/logging"
+	"stockcentraluploadlistproductsv2/internal/providers"
+)
+
+// Este archivo contiene el orquestador principal del batch.
+//
+// Sus responsabilidades son:
+// - pedir providers válidos
+// - descubrir archivos elegibles
+// - procesar cada archivo de a uno
+// - consolidar métricas globales
+type Processor struct {
+	cfg           appconfig.BatchConfig
+	providerRepo  providers.ProviderRepository
+	scanner       *files.Scanner
+	fileProcessor *FileProcessor
+	logs          logging.LoggerSet
+}
+
+// NewProcessor construye el orquestador del batch.
+func NewProcessor(
+	cfg appconfig.BatchConfig,
+	providerRepo providers.ProviderRepository,
+	scanner *files.Scanner,
+	fileProcessor *FileProcessor,
+	logs logging.LoggerSet,
+) *Processor {
+	return &Processor{
+		cfg:           cfg,
+		providerRepo:  providerRepo,
+		scanner:       scanner,
+		fileProcessor: fileProcessor,
+		logs:          logs,
+	}
+}
+
+// Run ejecuta una corrida completa del batch de principio a fin.
+func (p *Processor) Run(ctx context.Context) (domain.BatchResult, error) {
+	result := domain.BatchResult{StartedAt: time.Now()}
+
+	// Paso 1. Traer providers válidos desde la fuente configurada.
+	providers, err := p.providerRepo.ListEnabledByIntegratorAndCatalog(ctx, p.cfg.ProviderIntegratorID, p.cfg.CatalogID)
+	if err != nil {
+		return result, fmt.Errorf("list providers from repository: %w", err)
+	}
+
+	// Ordenamos por ID para tener un orden estable y más fácil de auditar.
+	slices.SortFunc(providers, func(a, b domain.Provider) int {
+		switch {
+		case a.ID < b.ID:
+			return -1
+		case a.ID > b.ID:
+			return 1
+		default:
+			return 0
+		}
+	})
+
+	result.ProvidersSeen = len(providers)
+	result.ProvidersActive = len(providers)
+
+	// Registramos cuántos providers quedaron habilitados para esta corrida.
+	p.logs.Summary.Info("providers-loaded",
+		logging.Int("catalog_id", p.cfg.CatalogID),
+		logging.Int("provider_integrator_id", p.cfg.ProviderIntegratorID),
+		logging.Int("providers_count", len(providers)),
+	)
+
+	// Paso 2. Buscar archivos dentro de carpetas válidas.
+	jobs, err := p.scanner.DiscoverProviderFiles(ctx, providers)
+	if err != nil {
+		return result, fmt.Errorf("discover provider files: %w", err)
+	}
+
+	result.FilesDetected = len(jobs)
+	p.logs.Summary.Info("files-discovered", logging.Int("count", len(jobs)))
+
+	// Paso 3. Procesar cada archivo de forma secuencial.
+	// La concurrencia real va a vivir más adelante dentro de cada archivo,
+	// a nivel fila.
+	for _, job := range jobs {
+		fileResult, fileErr := p.fileProcessor.Process(ctx, job)
+		result.Files = append(result.Files, fileResult)
+
+		if fileErr != nil {
+			// Si un archivo falla, lo contamos y lo registramos.
+			result.FilesFailed++
+			p.logs.Summary.Error("file-failed",
+				logging.Int("provider_id", job.ProviderID),
+				logging.String("file", job.RelativePath),
+				logging.String("error", fileErr.Error()),
+			)
+
+			// Si la config pide cortar en el primer error, salimos acá.
+			if p.cfg.StopOnFileError {
+				result.FinishedAt = time.Now()
+				return result, fmt.Errorf("stop_on_file_error active: %w", fileErr)
+			}
+			continue
+		}
+
+		// Si salió bien, incrementamos el contador de procesados.
+		result.FilesProcessed++
+	}
+
+	// Cerramos el resultado del batch con timestamp final.
+	result.FinishedAt = time.Now()
+	return result, nil
+}

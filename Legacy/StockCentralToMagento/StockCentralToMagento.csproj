@@ -1,0 +1,136 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="12.0" DefaultTargets="Build" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <Import Project="$(MSBuildExtensionsPath)\$(MSBuildToolsVersion)\Microsoft.Common.props" Condition="Exists('$(MSBuildExtensionsPath)\$(MSBuildToolsVersion)\Microsoft.Common.props')" />
+  <PropertyGroup>
+    <Configuration Condition=" '$(Configuration)' == '' ">Debug</Configuration>
+    <Platform Condition=" '$(Platform)' == '' ">AnyCPU</Platform>
+    <ProjectGuid>{3C985167-CE24-4001-827F-FF08D6834383}</ProjectGuid>
+    <OutputType>Library</OutputType>
+    <AppDesignerFolder>Properties</AppDesignerFolder>
+    <RootNamespace>StockCentralToMagento</RootNamespace>
+    <AssemblyName>StockCentralToMagento</AssemblyName>
+    <TargetFrameworkVersion>v4.5</TargetFrameworkVersion>
+    <FileAlignment>512</FileAlignment>
+    <TargetFrameworkProfile />
+  </PropertyGroup>
+  <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Debug|AnyCPU' ">
+    <DebugSymbols>true</DebugSymbols>
+    <DebugType>full</DebugType>
+    <Optimize>false</Optimize>
+    <OutputPath>bin\Debug\</OutputPath>
+    <DefineConstants>DEBUG;TRACE</DefineConstants>
+    <ErrorReport>prompt</ErrorReport>
+    <WarningLevel>4</WarningLevel>
+    <Prefer32Bit>false</Prefer32Bit>
+  </PropertyGroup>
+  <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Release|AnyCPU' ">
+    <DebugType>pdbonly</DebugType>
+    <Optimize>true</Optimize>
+    <OutputPath>bin\Release\</OutputPath>
+    <DefineConstants>TRACE</DefineConstants>
+    <ErrorReport>prompt</ErrorReport>
+    <WarningLevel>4</WarningLevel>
+    <Prefer32Bit>false</Prefer32Bit>
+  </PropertyGroup>
+  <ItemGroup>
+    <Reference Include="ctcILS.CoreV4.Business">
+      <HintPath>..\..\..\CtcILS\Directorios_Virtuales\1\bin\ctcILS.CoreV4.Business.dll</HintPath>
+    </Reference>
+    <Reference Include="ctcILS.CoreV4.DataAccess">
+      <HintPath>..\..\..\CtcILS\Directorios_Virtuales\1\bin\ctcILS.CoreV4.DataAccess.dll</HintPath>
+    </Reference>
+    <Reference Include="ctcILS.CoreV4.Entities">
+      <HintPath>..\..\..\CtcILS\Directorios_Virtuales\1\bin\ctcILS.CoreV4.Entities.dll</HintPath>
+    </Reference>
+    <Reference Include="ET.Comun, Version=11.3.4.880, Culture=neutral, processorArchitecture=MSIL">
+      <SpecificVersion>False</SpecificVersion>
+      <HintPath>..\..\..\Stock Central V4.3\StockSystem_v4.03\Redemption.Web\bin\ET.Comun.dll</HintPath>
+    </Reference>
+    <Reference Include="itextsharp, Version=5.2.1.0, Culture=neutral, PublicKeyToken=8354ae6d2174ddca, processorArchitecture=MSIL">
+      <SpecificVersion>False</SpecificVersion>
+      <HintPath>..\StockCentralToMagentoServices\dll\itextsharp.dll</HintPath>
+    </Reference>
+    <Reference Include="Newtonsoft.Json, Version=10.0.0.0, Culture=neutral, PublicKeyToken=30ad4fe6b2a6aeed, processorArchitecture=MSIL">
+      <HintPath>..\packages\Newtonsoft.Json.10.0.3\lib\net45\Newtonsoft.Json.dll</HintPath>
+    </Reference>
+    <Reference Include="NPOI">
+      <HintPath>..\StockCentralToMagentoServices\dll\NPOI.dll</HintPath>
+    </Reference>
+    <Reference Include="NPOI.OOXML">
+      <HintPath>..\StockCentralToMagentoServices\dll\NPOI.OOXML.dll</HintPath>
+    </Reference>
+    <Reference Include="NPOI.OpenXml4Net">
+      <HintPath>..\StockCentralToMagentoServices\dll\NPOI.OpenXml4Net.dll</HintPath>
+    </Reference>
+    <Reference Include="NPOI.OpenXmlFormats">
+      <HintPath>..\StockCentralToMagentoServices\dll\NPOI.OpenXmlFormats.dll</HintPath>
+    </Reference>
+    <Reference Include="Redemption.Core">
+      <HintPath>..\..\..\CtcILS\Directorios_Virtuales\1\bin\Redemption.Core.dll</HintPath>
+    </Reference>
+    <Reference Include="System" />
+    <Reference Include="System.Configuration" />
+    <Reference Include="System.Core" />
+    <Reference Include="System.Drawing" />
+    <Reference Include="System.Drawing.Design" />
+    <Reference Include="System.Xml.Linq" />
+    <Reference Include="System.Data.DataSetExtensions" />
+    <Reference Include="System.Data" />
+    <Reference Include="System.Xml" />
+    <Reference Include="WinSCPnet, Version=1.6.3.9407, Culture=neutral, PublicKeyToken=2271ec4a3c56d0bf, processorArchitecture=MSIL">
+      <SpecificVersion>False</SpecificVersion>
+      <HintPath>..\packages\WinSCP\net40\WinSCPnet.dll</HintPath>
+    </Reference>
+  </ItemGroup>
+  <ItemGroup>
+    <Compile Include="Business\ErrorSystem.cs" />
+    <Compile Include="Business\LogSystem.cs" />
+    <Compile Include="Business\ProcessSystem.cs" />
+    <Compile Include="DataAccess\AttributeDALC.cs" />
+    <Compile Include="DataAccess\CatalogDALC.cs" />
+    <Compile Include="DataAccess\CategoryDALC.cs" />
+    <Compile Include="DataAccess\DataConvert.cs" />
+    <Compile Include="DataAccess\MovementDALC.cs" />
+    <Compile Include="DataAccess\ProviderDALC.cs" />
+    <Compile Include="DataAccess\ProviderVoucherDALC.cs" />
+    <Compile Include="DataAccess\StoreProviderDALC.cs" />
+    <Compile Include="DataAccess\SubCategoryDALC.cs" />
+    <Compile Include="Entities\AttributeEntity.cs" />
+    <Compile Include="Entities\CatalogStockEntity.cs" />
+    <Compile Include="Entities\MenuCategoryEntity.cs" />
+    <Compile Include="Entities\ProductNotificationEntity.cs" />
+    <Compile Include="Entities\ImageEntity.cs" />
+    <Compile Include="Entities\ItemCategoryEntity.cs" />
+    <Compile Include="Entities\ItemCompleteSubCategoryEntity.cs" />
+    <Compile Include="Entities\ItemSubCategoryEntity.cs" />
+    <Compile Include="Entities\MagentoCatalogEntity.cs" />
+    <Compile Include="Entities\MovementConcilEntity.cs" />
+    <Compile Include="Entities\MovementEntity.cs" />
+    <Compile Include="Entities\MovementExEntity.cs" />
+    <Compile Include="Entities\ProviderEntity.cs" />
+    <Compile Include="Entities\ProviderVoucherEntity.cs" />
+    <Compile Include="Entities\StoreProviderEntity.cs" />
+    <Compile Include="Properties\AssemblyInfo.cs" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\..\MagentoUtils\MagentoUtils.csproj">
+      <Project>{b38b1f2b-85cc-4729-af97-65e93a03ac1d}</Project>
+      <Name>MagentoUtils</Name>
+    </ProjectReference>
+    <ProjectReference Include="..\..\MG2Connector\MG2Connector.csproj">
+      <Project>{dd165653-d697-4fce-a3bc-20490e339f54}</Project>
+      <Name>MG2Connector</Name>
+    </ProjectReference>
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="packages.config" />
+  </ItemGroup>
+  <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
+  <!-- To modify your build process, add your task inside one of the targets below and uncomment it. 
+       Other similar extension points exist, see Microsoft.Common.targets.
+  <Target Name="BeforeBuild">
+  </Target>
+  <Target Name="AfterBuild">
+  </Target>
+  -->
+</Project>

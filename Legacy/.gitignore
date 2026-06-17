@@ -1,0 +1,17 @@
+# Visual Studio workspace files
+.vs/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+
+# Build outputs
+bin/
+obj/
+
+# Test/mocking artifacts
+Fakes/
+FakesAssemblies/
+
+# Common local backups
+*.bak

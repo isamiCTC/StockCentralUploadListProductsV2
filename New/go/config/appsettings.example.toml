@@ -1,0 +1,47 @@
+[app]
+name = "StockCentralUploadListProductsV2"
+environment = "development"
+
+[batch]
+catalog_id = 31
+provider_integrator_id = 3
+sync_images = true
+stop_on_file_error = false
+row_workers = 5
+row_timeout_seconds = 120
+
+[paths]
+input_root = "C:/path/to/input"
+processing_root = "C:/path/to/processing"
+processed_root = "C:/path/to/processed"
+
+[database]
+timeout_seconds = 30
+providers_sp_name = "ProvidersGetListByEnabledAndIntegratorAndCatalogID"
+
+[products_api]
+base_url = "http://stockcentral.ctcils.com.ar:26202"
+provider_name = "CTC"
+timeout_seconds = 60
+
+[notifications]
+enabled = true
+from_email = "no-reply@ctcgroup.com.ar"
+always_recipients = ["soporte@ctcgroup.com.ar", "catalogos@ctcgroup.com.ar"]
+
+[logging]
+directory = "./logs"
+level = "debug"
+console_level = "info"
+
+[logging.summary]
+filename = "batch-summary.log"
+max_size_mb = 20
+max_backups = 10
+max_age_days = 14
+
+[logging.detail]
+filename = "batch-detail.log"
+max_size_mb = 50
+max_backups = 10
+max_age_days = 14
