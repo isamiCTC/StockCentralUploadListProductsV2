@@ -231,9 +231,9 @@ Hoy:
 
 ### Rol de `internal/app`
 
-Después del refactor actual, el arranque técnico ya no vive en `main.go` ni en la CLI.
+El arranque técnico se reparte entre `main.go`, la CLI y la capa `internal/app`.
 
-Ahora:
+En la práctica:
 
 1. `internal/app/runbatch/service.go` coordina la ejecución del caso de uso `run`;
 2. `internal/app/runbatch/runtime.go` arma el runtime concreto del batch;
@@ -275,23 +275,6 @@ En cambio:
 9. intenta abrir SQL Server y hacer ping;
 10. imprime una línea `OK` o `FAIL` por cada chequeo;
 11. devuelve exit code `1` si alguno falla.
-
-### Qué ya no hace `main`
-
-No:
-
-- parsea flags manualmente;
-- define subcomandos ni opciones manualmente;
-- abre SQL Server;
-- construye repositorios o clients concretos;
-- abre archivos Excel;
-- ejecuta el SP directamente;
-- parsea filas;
-- arma requests HTTP;
-- manda mails;
-- ni resuelve categorías.
-
-Todo eso queda delegado.
 
 ---
 
@@ -866,7 +849,7 @@ El caso histórico de `5` columnas fue eliminado completamente del V2.
 
 O sea:
 
-- ya no existe como ruta funcional;
+- el formato de 5 columnas no forma parte de los formatos soportados;
 - cualquier archivo con 5 columnas cae en `UNSUPPORTED`.
 
 Eso está alineado con la decisión que tomaste de sacarlo explícitamente del alcance.
@@ -2006,7 +1989,7 @@ Si `OFERTA > 0`, pisa `Price` y conserva `ListPrice`.
 
 ### 1. Batch one-shot
 
-Ya no hay loop infinito ni timer extraño.
+La corrida es de una sola ejecución y termina al completar el trabajo detectado.
 
 ### 2. Configuración más limpia
 
@@ -2049,7 +2032,7 @@ Excel, DB, API, mail, logs, results y batch están bastante mejor desacoplados.
 
 ### 10. Soporte explícito de notificaciones
 
-Antes no existía este cierre formal por archivo.
+La V2 cierra cada archivo con una notificación formal y un adjunto entendible.
 
 ---
 
@@ -2160,7 +2143,7 @@ Esta es la secuencia end-to-end real de la V2 hoy:
 
 ## Conclusión final
 
-`StockCentralUploadListProductsV2` ya es una base bastante sólida y mucho más clara que el legacy.
+`StockCentralUploadListProductsV2` es una base sólida y clara para este proceso batch.
 
 Hoy el sistema ya resuelve de punta a punta:
 
