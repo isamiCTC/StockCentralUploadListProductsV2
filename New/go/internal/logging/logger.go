@@ -50,11 +50,29 @@ type Logger struct {
 	mu       sync.Mutex
 }
 
+// Buffer acumula varias líneas con el mismo formato del logger y luego las
+// escribe de una sola vez. Esto sirve cuando queremos que un bloque completo
+// quede junto en el archivo final, sin mezclarse con líneas de otra goroutine.
+type Buffer struct {
+	logger *Logger
+	lines  []string
+}
+
 // New crea una instancia simple de logger para un writer dado.
 func New(minLevel Level, writer io.Writer) *Logger {
 	return &Logger{
 		minLevel: minLevel,
 		writer:   writer,
+	}
+}
+
+// NewBuffer crea un acumulador temporal de líneas para este logger.
+// El caller puede ir agregando eventos y luego hacer `Flush()` para que
+// salgan juntos como un bloque atómico.
+func (l *Logger) NewBuffer() *Buffer {
+	return &Buffer{
+		logger: l,
+		lines:  make([]string, 0, 16),
 	}
 }
 
@@ -82,6 +100,44 @@ func (l *Logger) log(level Level, msg string, fields ...Field) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	_, _ = io.WriteString(l.writer, line)
+}
+
+// Métodos públicos del buffer por nivel. Mantienen la misma interfaz básica
+// del logger normal, pero todavía no escriben nada al destino final.
+func (b *Buffer) Debug(msg string, fields ...Field) { b.log(LevelDebug, msg, fields...) }
+func (b *Buffer) Info(msg string, fields ...Field)  { b.log(LevelInfo, msg, fields...) }
+func (b *Buffer) Warn(msg string, fields ...Field)  { b.log(LevelWarn, msg, fields...) }
+func (b *Buffer) Error(msg string, fields ...Field) { b.log(LevelError, msg, fields...) }
+
+// Flush escribe todo el bloque junto y luego vacía el buffer para poder
+// reutilizarlo si hace falta.
+func (b *Buffer) Flush() {
+	if b == nil || b.logger == nil || len(b.lines) == 0 {
+		return
+	}
+
+	var block strings.Builder
+	for _, line := range b.lines {
+		block.WriteString(line)
+	}
+
+	b.logger.mu.Lock()
+	defer b.logger.mu.Unlock()
+	_, _ = io.WriteString(b.logger.writer, block.String())
+	b.lines = b.lines[:0]
+}
+
+// log formatea una línea con timestamp y fields, igual que el logger normal,
+// pero la deja en memoria hasta que llegue el momento de hacer Flush.
+func (b *Buffer) log(level Level, msg string, fields ...Field) {
+	if b == nil || b.logger == nil {
+		return
+	}
+	if !enabled(b.logger.minLevel, level) {
+		return
+	}
+
+	b.lines = append(b.lines, formatLine(time.Now(), level, msg, fields...))
 }
 
 // enabled compara el nivel actual contra el nivel mínimo configurado.

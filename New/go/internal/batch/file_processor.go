@@ -509,10 +509,26 @@ func (p *FileProcessor) processSingleRow(ctx context.Context, providerID int, fo
 		}
 	}
 
+	// A partir de acá armamos un buffer exclusivo para esta fila.
+	// Todo lo que se loguee dentro de este SKU se acumula y se escribe junto
+	// al final, evitando que se mezcle con otras filas concurrentes.
+	rowLogs := p.logs.Detail.NewBuffer()
+	defer func() {
+		rowLogs.Info(fmt.Sprintf("-------- FIN SKU: %s ----------", row.SKU),
+			logging.Int("provider_id", providerID),
+			logging.Int("excel_row", row.ExcelRowNumber),
+		)
+		rowLogs.Flush()
+	}()
+
 	// Paso 2. Si el mapper ya marcó problemas, no entramos a negocio.
 	if row.HasErrors() {
 		detail := joinRowIssues(row.Issues)
-		p.logs.Detail.Error("row-mapping-error",
+		rowLogs.Info(fmt.Sprintf("-------- SKU: %s ----------", row.SKU),
+			logging.Int("provider_id", providerID),
+			logging.Int("excel_row", row.ExcelRowNumber),
+		)
+		rowLogs.Error("row-mapping-error",
 			logging.Int("provider_id", providerID),
 			logging.Int("excel_row", row.ExcelRowNumber),
 			logging.String("sku", row.SKU),
@@ -529,7 +545,7 @@ func (p *FileProcessor) processSingleRow(ctx context.Context, providerID int, fo
 	}
 
 	// Paso 3. A partir de acá la fila está lista para ejecutar lógica real.
-	p.logs.Detail.Info(fmt.Sprintf("-------- SKU: %s ----------", row.SKU),
+	rowLogs.Info(fmt.Sprintf("-------- SKU: %s ----------", row.SKU),
 		logging.Int("provider_id", providerID),
 		logging.Int("excel_row", row.ExcelRowNumber),
 	)
@@ -537,10 +553,16 @@ func (p *FileProcessor) processSingleRow(ctx context.Context, providerID int, fo
 	// Paso 4. El formato define qué camino de negocio aplicar a esa fila.
 	switch format {
 	case workbook.FileFormatStockUpdate:
-		return p.processStockUpdateRow(ctx, providerID, row)
+		return p.processStockUpdateRow(ctx, providerID, row, rowLogs)
 	case workbook.FileFormatFullImport:
-		return p.processFullImportRow(ctx, providerID, row)
+		return p.processFullImportRow(ctx, providerID, row, rowLogs)
 	default:
+		rowLogs.Error("row-unsupported-format",
+			logging.Int("provider_id", providerID),
+			logging.Int("excel_row", row.ExcelRowNumber),
+			logging.String("sku", row.SKU),
+			logging.String("format", string(format)),
+		)
 		return reporting.RowResult{
 			ProviderID:     providerID,
 			ExcelRowNumber: row.ExcelRowNumber,
@@ -553,14 +575,14 @@ func (p *FileProcessor) processSingleRow(ctx context.Context, providerID int, fo
 }
 
 // processStockUpdateRow implementa el caso reducido de SKU + STOCK.
-func (p *FileProcessor) processStockUpdateRow(ctx context.Context, providerID int, row workbook.MappedRow) reporting.RowResult {
+func (p *FileProcessor) processStockUpdateRow(ctx context.Context, providerID int, row workbook.MappedRow, rowLogs *logging.Buffer) reporting.RowResult {
 	// Arrancamos con una base común y luego la vamos completando.
 	result := baseRowResult(providerID, row)
 	result.ProductResult = "NO_PROCESADO"
 	result.ImagesResult = "NO_APLICA"
 	result.Message = "Actualización de stock completada"
 
-	p.logs.Detail.Info("validation-stock-row-ok",
+	rowLogs.Info("validation-stock-row-ok",
 		logging.Int("provider_id", providerID),
 		logging.Int("excel_row", row.ExcelRowNumber),
 		logging.String("sku", row.SKU),
@@ -578,7 +600,7 @@ func (p *FileProcessor) processStockUpdateRow(ctx context.Context, providerID in
 	if err != nil {
 		result.Status = reporting.RowStatusError
 		result.Message, result.Detail = classifyRowError(ctx, "Falló la actualización de stock en la API", err)
-		p.logs.Detail.Error("stock-sync-failed",
+		rowLogs.Error("stock-sync-failed",
 			logging.Int("provider_id", providerID),
 			logging.Int("excel_row", row.ExcelRowNumber),
 			logging.String("sku", row.SKU),
@@ -592,7 +614,7 @@ func (p *FileProcessor) processStockUpdateRow(ctx context.Context, providerID in
 	result.ProductResult = "ACTUALIZADO"
 	result.Detail = describeMeta(updateMeta)
 
-	p.logs.Detail.Info("stock-sync-ok",
+	rowLogs.Info("stock-sync-ok",
 		logging.Int("provider_id", providerID),
 		logging.Int("excel_row", row.ExcelRowNumber),
 		logging.String("sku", row.SKU),
@@ -603,13 +625,13 @@ func (p *FileProcessor) processStockUpdateRow(ctx context.Context, providerID in
 }
 
 // processFullImportRow implementa la importación completa de 19 columnas.
-func (p *FileProcessor) processFullImportRow(ctx context.Context, providerID int, row workbook.MappedRow) reporting.RowResult {
+func (p *FileProcessor) processFullImportRow(ctx context.Context, providerID int, row workbook.MappedRow, rowLogs *logging.Buffer) reporting.RowResult {
 	// Igual que en stock, partimos de un resultado base y lo enriquecemos.
 	result := baseRowResult(providerID, row)
 	result.ProductResult = "NO_PROCESADO"
 	result.ImagesResult = "NO_APLICA"
 
-	p.logs.Detail.Info("validation-full-row-ok",
+	rowLogs.Info("validation-full-row-ok",
 		logging.Int("provider_id", providerID),
 		logging.Int("excel_row", row.ExcelRowNumber),
 		logging.String("sku", row.SKU),
@@ -627,7 +649,7 @@ func (p *FileProcessor) processFullImportRow(ctx context.Context, providerID int
 	if err != nil {
 		result.Status = reporting.RowStatusError
 		result.Message, result.Detail = classifyRowError(ctx, "No se pudo resolver la subcategoría", err)
-		p.logs.Detail.Error("subcategory-resolution-failed",
+		rowLogs.Error("subcategory-resolution-failed",
 			logging.Int("provider_id", providerID),
 			logging.Int("excel_row", row.ExcelRowNumber),
 			logging.String("sku", row.SKU),
@@ -636,7 +658,7 @@ func (p *FileProcessor) processFullImportRow(ctx context.Context, providerID int
 		return result
 	}
 
-	p.logs.Detail.Info("subcategory-resolution-ok",
+	rowLogs.Info("subcategory-resolution-ok",
 		logging.Int("provider_id", providerID),
 		logging.Int("excel_row", row.ExcelRowNumber),
 		logging.String("sku", row.SKU),
@@ -668,7 +690,7 @@ func (p *FileProcessor) processFullImportRow(ctx context.Context, providerID int
 	if err != nil {
 		result.Status = reporting.RowStatusError
 		result.Message, result.Detail = classifyRowError(ctx, "Falló el alta o actualización del producto", err)
-		p.logs.Detail.Error("product-upsert-failed",
+		rowLogs.Error("product-upsert-failed",
 			logging.Int("provider_id", providerID),
 			logging.Int("excel_row", row.ExcelRowNumber),
 			logging.String("sku", row.SKU),
@@ -678,7 +700,7 @@ func (p *FileProcessor) processFullImportRow(ctx context.Context, providerID int
 	}
 
 	result.ProductResult = translateProductAction(upsertResult.Action)
-	p.logs.Detail.Info("product-upsert-ok",
+	rowLogs.Info("product-upsert-ok",
 		logging.Int("provider_id", providerID),
 		logging.Int("excel_row", row.ExcelRowNumber),
 		logging.String("sku", row.SKU),
@@ -704,7 +726,7 @@ func (p *FileProcessor) processFullImportRow(ctx context.Context, providerID int
 	}
 
 	// Recién en este punto empezamos a tratar imágenes.
-	imagesSynced, imagesFailed, imageDetails := p.syncRowImages(ctx, providerID, row)
+	imagesSynced, imagesFailed, imageDetails := p.syncRowImages(ctx, providerID, row, rowLogs)
 
 	// Si el contexto venció durante imágenes, el producto ya pudo haber quedado
 	// impactado, por eso devolvemos PARTIAL_OK.
@@ -733,7 +755,7 @@ func (p *FileProcessor) processFullImportRow(ctx context.Context, providerID int
 
 // syncRowImages procesa las imágenes de una fila y devuelve métricas útiles
 // para el Excel final de resultados.
-func (p *FileProcessor) syncRowImages(ctx context.Context, providerID int, row workbook.MappedRow) (imagesSynced, imagesFailed int, details []string) {
+func (p *FileProcessor) syncRowImages(ctx context.Context, providerID int, row workbook.MappedRow, rowLogs *logging.Buffer) (imagesSynced, imagesFailed int, details []string) {
 	if row.FullImport == nil || len(row.FullImport.ImageURLs) == 0 {
 		return 0, 0, nil
 	}
@@ -745,7 +767,7 @@ func (p *FileProcessor) syncRowImages(ctx context.Context, providerID int, row w
 			break
 		}
 
-		p.logs.Detail.Info("image-sync-start",
+		rowLogs.Info("image-sync-start",
 			logging.Int("provider_id", providerID),
 			logging.Int("excel_row", row.ExcelRowNumber),
 			logging.String("sku", row.SKU),
@@ -762,7 +784,7 @@ func (p *FileProcessor) syncRowImages(ctx context.Context, providerID int, row w
 			}
 			imagesFailed++
 			details = append(details, fmt.Sprintf("Imagen %d: fallo descarga: %s", index, err.Error()))
-			p.logs.Detail.Error("image-download-failed",
+			rowLogs.Error("image-download-failed",
 				logging.Int("provider_id", providerID),
 				logging.Int("excel_row", row.ExcelRowNumber),
 				logging.String("sku", row.SKU),
@@ -781,7 +803,7 @@ func (p *FileProcessor) syncRowImages(ctx context.Context, providerID int, row w
 			}
 			imagesFailed++
 			details = append(details, fmt.Sprintf("Imagen %d: fallo sync API: %s", index, err.Error()))
-			p.logs.Detail.Error("image-sync-failed",
+			rowLogs.Error("image-sync-failed",
 				logging.Int("provider_id", providerID),
 				logging.Int("excel_row", row.ExcelRowNumber),
 				logging.String("sku", row.SKU),
@@ -796,7 +818,7 @@ func (p *FileProcessor) syncRowImages(ctx context.Context, providerID int, row w
 		if syncResult.Action == "SKIP_SAME_IMAGE" {
 			details = append(details, fmt.Sprintf("Imagen %d: sin cambios, no se vuelve a subir", index))
 		}
-		p.logs.Detail.Info("image-sync-ok",
+		rowLogs.Info("image-sync-ok",
 			logging.Int("provider_id", providerID),
 			logging.Int("excel_row", row.ExcelRowNumber),
 			logging.String("sku", row.SKU),

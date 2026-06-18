@@ -169,7 +169,7 @@ func TestProcessFullImportRowMarksPartialWhenTimeoutExpiresDuringImages(t *testi
 	rowCtx, cancel := context.WithTimeout(context.Background(), 250*time.Millisecond)
 	defer cancel()
 
-	result := processor.processFullImportRow(rowCtx, 342, row)
+	result := processor.processFullImportRow(rowCtx, 342, row, discardLoggerSet().Detail.NewBuffer())
 
 	if result.Status != reporting.RowStatusPartialOK {
 		t.Fatalf("Status = %q, want %q", result.Status, reporting.RowStatusPartialOK)

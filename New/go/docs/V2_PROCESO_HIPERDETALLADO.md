@@ -44,7 +44,7 @@ El flujo principal de V2 se reparte entre estos archivos:
    Punto de entrada mínimo. Solo delega la ejecución a la CLI.
 
 2. `internal/cli/root.go`
-   Define el comando raíz con Cobra, sus flags persistentes y los subcomandos disponibles.
+   Define el comando raíz con Cobra, una librería de Go para CLIs con subcomandos, flags y help automático.
 
 3. `internal/app/runbatch/runtime.go`
    Construye todas las dependencias concretas del modo batch y expone helpers de logging de inicio/cierre.
@@ -135,13 +135,13 @@ El flujo principal de V2 se reparte entre estos archivos:
     Resolución de destinatarios.
 
 28. `internal/notifications/sendgrid.go`
-    Cliente concreto de SendGrid.
+    Cliente concreto de SendGrid, el servicio externo usado para enviar mails.
 
 29. `internal/logging/logger.go`
     Logger propio, formato humano.
 
 30. `internal/logging/factory.go`
-    Construcción de ambos archivos de log con rotación vía `lumberjack`.
+    Construcción de ambos archivos de log con rotación vía `lumberjack`, una librería de Go para rotar archivos de log.
 
 ---
 
@@ -150,7 +150,7 @@ El flujo principal de V2 se reparte entre estos archivos:
 Hoy la V2 hace esto:
 
 1. arranca el binario;
-2. delega la ejecución a una CLI basada en Cobra;
+2. delega la ejecución a una CLI basada en Cobra, una librería de Go orientada a comandos de consola;
 3. si se ejecuta `self-check`, valida config, carpetas, escritura y SQL Server, e informa el resultado;
 4. si se ejecuta `run`, carga TOML y `.env`;
 5. inicializa logging;
@@ -219,14 +219,15 @@ Su secuencia es:
 
 ### Rol de `internal/cli`
 
-La capa `internal/cli` centraliza el uso de Cobra.
+La capa `internal/cli` centraliza el uso de Cobra, una librería de Go pensada para CLIs con comandos, flags y help integrado.
 
 Hoy:
 
 1. define el comando raíz `StockCentralUploadListProductsV2`;
 2. declara los flags persistentes `--settings` y `--env`;
 3. registra los subcomandos `run` y `self-check`;
-4. delega cada acción concreta a la capa `internal/app`.
+4. delega cada acción concreta a la capa `internal/app`;
+5. si se ejecuta sin subcomando, imprime help y termina con error para evitar corridas accidentales.
 
 ### Rol de `internal/app`
 
@@ -392,7 +393,7 @@ Es decir:
 
 ## Logging
 
-La V2 usa logger propio + `lumberjack`.
+La V2 usa logger propio + `lumberjack`, una librería de Go para rotación de archivos de log.
 
 ### Archivos de log
 
@@ -435,7 +436,13 @@ Siempre usa:
 
 ### Concurrencia en logs
 
-Cada logger tiene `sync.Mutex`, así que múltiples goroutines no mezclan una línea con otra.
+Cada logger tiene `sync.Mutex`, así que múltiples goroutines no mezclan texto dentro de una misma línea.
+
+Además, hoy el `detail` por fila usa un buffer temporal por SKU:
+
+- cada worker acumula en memoria las líneas de su fila;
+- cuando la fila termina, escribe el bloque completo de una sola vez;
+- eso evita que se intercalen eventos de SKUs distintos dentro del `detail`.
 
 ### Rotación y retención
 
@@ -479,17 +486,22 @@ Ejemplos:
 
 ### Formato tipo checklist por SKU
 
-La V2 ya deja la marca de inicio por SKU:
+La V2 hoy deja cada SKU como un bloque explícito y cerrado dentro del `detail`.
+
+Ejemplo conceptual:
 
 `-------- SKU: ABC123 ----------`
 
-Y a partir de ahí agrega eventos y fallas de esa transacción.
+`... eventos de validación, producto e imágenes ...`
 
-No es literalmente un bloque multi-línea rígido con una gramática fija, pero sí sigue el espíritu acordado:
+`-------- FIN SKU: ABC123 ----------`
 
-- cada fila se trata como una transacción;
-- se deja traza específica;
-- el detalle no se mezcla conceptualmente con el resumen.
+Ese bloque:
+
+- reúne toda la traza de una fila completa;
+- se escribe junto al final de esa fila;
+- no se mezcla con eventos de otros SKUs aunque haya concurrencia;
+- deja mucho más simple seguir la historia completa de una transacción.
 
 ---
 
@@ -504,7 +516,7 @@ La V2 mantiene la idea del legacy:
 
 `sqlserver.go`:
 
-1. abre `database/sql` con driver `go-mssqldb`;
+1. abre `database/sql`, el paquete estándar de Go para acceso a bases de datos, usando el driver `go-mssqldb`, que implementa conectividad con SQL Server;
 2. hace `PingContext` con timeout;
 3. expone `QueryContext`.
 
@@ -802,7 +814,7 @@ La lectura base la hace `reader.go`.
 
 Usa:
 
-- `excelize`
+- `excelize`, una librería de Go para leer y escribir archivos Excel `.xlsx`
 
 ### Reglas actuales
 
@@ -1471,7 +1483,7 @@ El cliente base vive en `products/client.go`.
 
 Usa:
 
-- `resty`
+- `resty`, una librería de Go para hacer requests HTTP de forma más cómoda que con el paquete estándar
 
 ### Configuración
 
@@ -1618,7 +1630,7 @@ La descarga está en `images/downloader.go`.
 5. si decodea bien:
    - devuelve Base64 de los bytes originales;
 6. si no decodea como imagen estándar:
-   - intenta `webp.Decode`;
+   - intenta `webp.Decode`, del paquete `golang.org/x/image/webp`, que agrega soporte para imágenes WebP en Go;
    - reencodea a JPEG;
    - devuelve Base64 del JPEG.
 
@@ -1629,7 +1641,7 @@ El legacy usaba `System.Drawing` + `Imazen.WebP`.
 La V2 usa:
 
 - decoders estándar de Go;
-- más `golang.org/x/image/webp`.
+- más `golang.org/x/image/webp`, una librería oficial del ecosistema Go para decodificar WebP.
 
 La intención funcional es la misma:
 
@@ -1908,7 +1920,7 @@ Se adjunta:
 
 ### Envío concreto
 
-Lo hace `sendgrid.go`.
+Lo hace `sendgrid.go`, que encapsula el uso de SendGrid, el proveedor externo de correo.
 
 Pasos:
 
@@ -2095,7 +2107,7 @@ Esta es la secuencia end-to-end real de la V2 hoy:
 16. procesa cada archivo de a uno;
 17. calcula rutas derivadas;
 18. mueve el archivo a `processing`;
-19. abre el `.xlsx` con `excelize`;
+19. abre el `.xlsx` con `excelize`, una librería de Go orientada a archivos Excel;
 20. toma la primera hoja;
 21. detecta formato por cantidad de columnas;
 22. valida estructura con matching laxo;
@@ -2109,38 +2121,40 @@ Esta es la secuencia end-to-end real de la V2 hoy:
 30. clasifica filas vacías, válidas o con issues;
 31. lanza el worker pool;
 32. cada worker toma una fila;
-33. si la fila es vacía -> `SKIPPED`;
-34. si la fila tiene issues -> `ERROR`;
-35. si es stock update:
-36. hace `GET` del producto;
-37. pisa stock;
-38. hace `PUT`;
-39. si es full import:
-38. resuelve categoría desde subcategoría;
-39. arma payload API;
-40. intenta `PUT`;
-41. si la API dice `Producto inexistente`, hace `POST`;
-42. si imágenes globales están desactivadas, termina la fila como `OK`;
-43. si la fila no trajo URLs válidas, termina la fila como `OK`;
-44. si trajo URLs válidas:
-45. descarga cada imagen;
-46. si hace falta, convierte WebP a JPEG;
-47. compara contra imagen existente;
-48. si es igual, no la resube;
-49. si no, intenta `PUT`;
-50. si la API dice `Imagen inexistente`, hace `POST`;
-51. si alguna imagen falla, la fila queda `PARTIAL_OK`;
-52. si todas salen bien, queda `OK`;
-53. se colectan todos los `RowResult`;
-54. se ordenan por fila de Excel;
-55. se mueve el original a `processed`;
-56. se genera `Resultados`;
-57. se calcula estado final del archivo;
-58. se manda mail con el adjunto correcto;
-59. se acumula el `FileResult`;
-60. termina el batch;
-61. se loguea el resumen global;
-62. el proceso sale.
+33. abre un buffer temporal para el `detail` de ese SKU;
+34. si la fila es vacía -> `SKIPPED`;
+35. si la fila tiene issues -> `ERROR`;
+36. si es stock update:
+37. hace `GET` del producto;
+38. pisa stock;
+39. hace `PUT`;
+40. si es full import:
+41. resuelve categoría desde subcategoría;
+42. arma payload API;
+43. intenta `PUT`;
+44. si la API dice `Producto inexistente`, hace `POST`;
+45. si imágenes globales están desactivadas, termina la fila como `OK`;
+46. si la fila no trajo URLs válidas, termina la fila como `OK`;
+47. si trajo URLs válidas:
+48. descarga cada imagen;
+49. si hace falta, convierte WebP a JPEG;
+50. compara contra imagen existente;
+51. si es igual, no la resube;
+52. si no, intenta `PUT`;
+53. si la API dice `Imagen inexistente`, hace `POST`;
+54. si alguna imagen falla, la fila queda `PARTIAL_OK`;
+55. si todas salen bien, queda `OK`;
+56. escribe el bloque completo del SKU en el `detail`;
+57. se colectan todos los `RowResult`;
+58. se ordenan por fila de Excel;
+59. se mueve el original a `processed`;
+60. se genera `Resultados`;
+61. se calcula estado final del archivo;
+62. se manda mail con el adjunto correcto;
+63. se acumula el `FileResult`;
+64. termina el batch;
+65. se loguea el resumen global;
+66. el proceso sale.
 
 ---
 
