@@ -5,6 +5,9 @@
 config/.env
 config/appsettings.toml
 
+# Local runtime outputs
+logs/
+
 # Build outputs
 dist/
 *.exe

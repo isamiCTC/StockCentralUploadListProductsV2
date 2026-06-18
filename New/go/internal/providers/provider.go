@@ -1,4 +1,4 @@
-package domain
+package providers
 
 // Provider representa el mínimo dato que hoy necesitamos de un proveedor:
 // su ID, su nombre y su email operativo si el SP lo informa.

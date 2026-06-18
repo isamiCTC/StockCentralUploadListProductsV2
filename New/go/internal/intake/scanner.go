@@ -1,4 +1,4 @@
-package files
+package intake
 
 import (
 	"context"
@@ -9,7 +9,7 @@ import (
 	"strconv"
 	"strings"
 
-	"stockcentraluploadlistproductsv2/internal/domain"
+	"stockcentraluploadlistproductsv2/internal/providers"
 )
 
 // Este archivo se ocupa de recorrer el árbol de input y descubrir los archivos
@@ -33,7 +33,7 @@ func NewScanner(inputRoot string) *Scanner {
 //
 // La salida no procesa nada todavía: solo arma `FileJob`s con la identidad
 // básica de cada archivo encontrado.
-func (s *Scanner) DiscoverProviderFiles(ctx context.Context, providers []domain.Provider) ([]domain.FileJob, error) {
+func (s *Scanner) DiscoverProviderFiles(ctx context.Context, providerList []providers.Provider) ([]FileJob, error) {
 	// Leemos solo el primer nivel del input root. El resto del descenso ocurre
 	// recién dentro de cada provider válido.
 	entries, err := os.ReadDir(s.inputRoot)
@@ -44,15 +44,15 @@ func (s *Scanner) DiscoverProviderFiles(ctx context.Context, providers []domain.
 	// Construimos dos estructuras auxiliares:
 	// - un mapa para resolver el provider completo por ID
 	// - un slice con IDs permitidos para filtrar carpetas
-	providerByID := make(map[int]domain.Provider, len(providers))
-	allowed := make([]int, 0, len(providers))
-	for _, provider := range providers {
+	providerByID := make(map[int]providers.Provider, len(providerList))
+	allowed := make([]int, 0, len(providerList))
+	for _, provider := range providerList {
 		providerByID[provider.ID] = provider
 		allowed = append(allowed, provider.ID)
 	}
 	slices.Sort(allowed)
 
-	var jobs []domain.FileJob
+	var jobs []FileJob
 
 	for _, entry := range entries {
 		// Si el contexto fue cancelado, cortamos cuanto antes.
@@ -100,7 +100,7 @@ func (s *Scanner) DiscoverProviderFiles(ctx context.Context, providers []domain.
 
 			// El job no procesa todavía: solo deja listo el "qué archivo"
 			// y "a qué provider pertenece".
-			jobs = append(jobs, domain.FileJob{
+			jobs = append(jobs, FileJob{
 				ProviderID:    providerID,
 				ProviderName:  providerByID[providerID].Name,
 				ProviderEmail: providerByID[providerID].Email,

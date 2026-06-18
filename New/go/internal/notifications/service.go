@@ -6,8 +6,10 @@ import (
 	"path/filepath"
 
 	appconfig "stockcentraluploadlistproductsv2/internal/config"
-	"stockcentraluploadlistproductsv2/internal/domain"
+	"stockcentraluploadlistproductsv2/internal/intake"
 	"stockcentraluploadlistproductsv2/internal/logging"
+	"stockcentraluploadlistproductsv2/internal/providers"
+	"stockcentraluploadlistproductsv2/internal/reporting"
 )
 
 // Este archivo contiene la lógica funcional de notificaciones del batch.
@@ -43,7 +45,7 @@ func NewService(cfg appconfig.NotificationsConfig, sender MailSender, logs loggi
 //
 // Si notificaciones está deshabilitado o no hay destinatarios, no falla:
 // simplemente registra y sale.
-func (s *Service) NotifyFileProcessed(ctx context.Context, job domain.FileJob, result domain.FileResult) error {
+func (s *Service) NotifyFileProcessed(ctx context.Context, job intake.FileJob, result reporting.FileResult) error {
 	// La primera salida temprana es global: si el feature está apagado,
 	// no intentamos resolver nada más.
 	if !s.cfg.Enabled {
@@ -56,7 +58,7 @@ func (s *Service) NotifyFileProcessed(ctx context.Context, job domain.FileJob, r
 
 	// A partir del provider del archivo resolvemos destinatarios finales:
 	// mails fijos + mail del provider si corresponde.
-	recipients := ResolveRecipients(s.cfg, domain.Provider{
+	recipients := ResolveRecipients(s.cfg, providers.Provider{
 		ID:    job.ProviderID,
 		Name:  job.ProviderName,
 		Email: job.ProviderEmail,
@@ -102,20 +104,20 @@ func (s *Service) NotifyFileProcessed(ctx context.Context, job domain.FileJob, r
 }
 
 // buildNotificationPayload define el asunto, cuerpo y adjunto según el estado.
-func buildNotificationPayload(job domain.FileJob, result domain.FileResult) (subject, body, attachmentPath string) {
+func buildNotificationPayload(job intake.FileJob, result reporting.FileResult) (subject, body, attachmentPath string) {
 	filename := filepath.Base(job.RelativePath)
 
 	// El estado final del archivo define tanto el texto como el adjunto.
 	switch result.Status {
-	case domain.FileStatusStructureError:
+	case reporting.FileStatusStructureError:
 		return fmt.Sprintf("Archivo rechazado - %d - %s", job.ProviderID, filename),
 			fmt.Sprintf("El archivo adjunto no pudo procesarse por estructura invalida.\nArchivo: %s", filename),
 			result.StructureErrorsPath
-	case domain.FileStatusProcessedErrors:
+	case reporting.FileStatusProcessedErrors:
 		return fmt.Sprintf("Archivo procesado con errores - %d - %s", job.ProviderID, filename),
 			fmt.Sprintf("Se proceso el archivo adjunto con observaciones.\nArchivo: %s", filename),
 			result.ResultsFilePath
-	case domain.FileStatusProcessed:
+	case reporting.FileStatusProcessed:
 		return fmt.Sprintf("Archivo procesado - %d - %s", job.ProviderID, filename),
 			fmt.Sprintf("Se proceso el archivo adjunto.\nArchivo: %s", filename),
 			result.ResultsFilePath

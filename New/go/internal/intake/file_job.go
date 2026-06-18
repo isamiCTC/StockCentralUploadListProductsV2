@@ -1,4 +1,4 @@
-package domain
+package intake
 
 // FileJob representa un archivo detectado listo para entrar al pipeline.
 //

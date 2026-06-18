@@ -4,8 +4,8 @@ import (
 	"path/filepath"
 	"testing"
 
-	"stockcentraluploadlistproductsv2/internal/domain"
-	"stockcentraluploadlistproductsv2/internal/excel"
+	"stockcentraluploadlistproductsv2/internal/reporting"
+	"stockcentraluploadlistproductsv2/internal/workbook"
 
 	"github.com/xuri/excelize/v2"
 )
@@ -17,12 +17,12 @@ func TestWriteRowResultsOmitsSkippedRowsAndWritesExpectedSheet(t *testing.T) {
 	outputPath := filepath.Join(root, "results", "catalog.result.xlsx")
 
 	writer := NewWriter()
-	err := writer.WriteRowResults(outputPath, []domain.RowResult{
-		{ExcelRowNumber: 2, SKU: "SKIP-1", Status: domain.RowStatusSkipped},
+	err := writer.WriteRowResults(outputPath, []reporting.RowResult{
+		{ExcelRowNumber: 2, SKU: "SKIP-1", Status: reporting.RowStatusSkipped},
 		{
 			ExcelRowNumber: 3,
 			SKU:            "ABC123",
-			Status:         domain.RowStatusOK,
+			Status:         reporting.RowStatusOK,
 			ProductResult:  "ACTUALIZADO",
 			ImagesResult:   "OK",
 			Message:        "Todo bien",
@@ -57,7 +57,7 @@ func TestWriteStructureErrorsWritesExpectedRows(t *testing.T) {
 	outputPath := filepath.Join(root, "results", "catalog.structure-errors.xlsx")
 
 	writer := NewWriter()
-	err := writer.WriteStructureErrors(outputPath, []excel.StructureError{
+	err := writer.WriteStructureErrors(outputPath, []workbook.StructureError{
 		{Field: "SKU", Message: "Falta columna", Detail: "No se encontró SKU"},
 	})
 	if err != nil {

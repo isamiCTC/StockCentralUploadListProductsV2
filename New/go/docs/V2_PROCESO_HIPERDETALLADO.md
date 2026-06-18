@@ -4,11 +4,7 @@
 
 Este documento describe, con el mayor detalle posible, cómo funciona hoy el proyecto nuevo `StockCentralUploadListProductsV2`.
 
-La idea es dejar documentado el comportamiento real implementado en Go, no solamente la intención de diseño. Por eso este informe distingue entre:
-
-- lo que ya está funcionando en código;
-- lo que replica explícitamente al legacy;
-- y lo que existe como configuración o idea, pero todavía no está conectado del todo al runtime.
+La idea es dejar documentado el comportamiento real implementado en Go, no solamente la intención de diseño.
 
 ---
 
@@ -44,104 +40,107 @@ El flujo principal de V2 se reparte entre estos archivos:
 
 ### Entry point y orquestación
 
-1. `go/cmd/StockCentralUploadListProductsV2/main.go`
-   Punto de entrada. Decide el modo (`--run` o `--self-check`) y orquesta la acción elegida.
+1. `cmd/StockCentralUploadListProductsV2/main.go`
+   Punto de entrada mínimo. Solo delega la ejecución a la CLI.
 
-2. `go/internal/bootstrap/batch.go`
+2. `internal/cli/root.go`
+   Define el comando raíz con Cobra, sus flags persistentes y los subcomandos disponibles.
+
+3. `internal/app/runbatch/runtime.go`
    Construye todas las dependencias concretas del modo batch y expone helpers de logging de inicio/cierre.
 
-3. `go/internal/bootstrap/selfcheck.go`
-   Implementa el modo `--self-check` y sus verificaciones técnicas de ambiente.
+4. `internal/app/selfcheck/checks.go`
+   Implementa el subcomando `self-check` y sus verificaciones técnicas de ambiente.
 
-4. `go/internal/batch/processor.go`
+5. `internal/batch/processor.go`
    Orquestador principal del batch completo.
 
-5. `go/internal/batch/file_processor.go`
+6. `internal/batch/file_processor.go`
    Procesador de un archivo individual.
 
 ### Configuración
 
-6. `go/internal/config/loader.go`
+6. `internal/config/loader.go`
    Carga `appsettings.toml` y `.env`, arma la configuración final y la valida.
 
-7. `go/internal/config/settings.go`
+7. `internal/config/settings.go`
    Modela las structs de configuración.
 
-8. `go/config/appsettings.toml`
+8. `config/appsettings.toml`
    Configuración no sensible.
 
 ### Providers y filesystem
 
-9. `go/internal/providers/sqlserver.go`
+9. `internal/providers/sqlserver.go`
    Conexión base a SQL Server.
 
-10. `go/internal/providers/sqlserver_repository.go`
+10. `internal/providers/sqlserver_repository.go`
    Ejecución del SP de providers y mapping del resultset.
 
-11. `go/internal/files/scanner.go`
+11. `internal/intake/scanner.go`
    Descubrimiento de archivos en input.
 
-12. `go/internal/files/mover.go`
+12. `internal/intake/mover.go`
     Movimiento de archivos entre `input`, `processing` y `processed`.
 
 ### Excel
 
-13. `go/internal/excel/reader.go`
+13. `internal/workbook/reader.go`
     Apertura del `.xlsx`, lectura de la primera hoja y armado del `Workbook`.
 
-14. `go/internal/excel/validator.go`
+14. `internal/workbook/validator.go`
     Validación estructural del archivo.
 
-15. `go/internal/excel/mapper.go`
+15. `internal/workbook/mapper.go`
     Conversión fila por fila a DTOs tipados.
 
-16. `go/internal/excel/numbers.go`
+16. `internal/workbook/numbers.go`
     Parsing numérico flexible.
 
-17. `go/internal/excel/normalize.go`
+17. `internal/workbook/normalize.go`
     Normalización laxa de headers y celdas.
 
 ### API de productos y categorías
 
-18. `go/internal/products/client.go`
+18. `internal/products/client.go`
     Cliente base REST.
 
-19. `go/internal/products/products.go`
+19. `internal/products/products.go`
     Operaciones de producto y upsert legacy.
 
-20. `go/internal/products/images.go`
+20. `internal/products/images.go`
     Sincronización legacy de imágenes.
 
-21. `go/internal/products/subcategories.go`
+21. `internal/products/subcategories.go`
     Fallback REST de subcategorías.
 
-22. `go/internal/catalog/resolver.go`
+22. `internal/catalog/resolver.go`
     Resolución de categoría a partir de subcategoría.
 
-23. `go/internal/catalog/hardcoded_map.go`
+23. `internal/catalog/hardcoded_map.go`
     Mapa hardcodeado heredado del legacy.
 
 ### Imágenes, resultados, mails y logs
 
-24. `go/internal/images/downloader.go`
+24. `internal/images/downloader.go`
     Descarga de imágenes y conversión a Base64.
 
-25. `go/internal/results/writer.go`
+25. `internal/results/writer.go`
     Escritura de `Resultados` y `ErroresEstructura`.
 
-26. `go/internal/notifications/service.go`
+26. `internal/notifications/service.go`
     Lógica funcional de mails.
 
-27. `go/internal/notifications/recipients.go`
+27. `internal/notifications/recipients.go`
     Resolución de destinatarios.
 
-28. `go/internal/notifications/sendgrid.go`
+28. `internal/notifications/sendgrid.go`
     Cliente concreto de SendGrid.
 
-29. `go/internal/logging/logger.go`
+29. `internal/logging/logger.go`
     Logger propio, formato humano.
 
-30. `go/internal/logging/factory.go`
+30. `internal/logging/factory.go`
     Construcción de ambos archivos de log con rotación vía `lumberjack`.
 
 ---
@@ -151,11 +150,11 @@ El flujo principal de V2 se reparte entre estos archivos:
 Hoy la V2 hace esto:
 
 1. arranca el binario;
-2. espera un modo explícito;
-3. si recibe `--self-check`, valida config, carpetas, escritura y SQL Server, e informa el resultado;
-4. si recibe `--run`, carga TOML y `.env`;
+2. delega la ejecución a una CLI basada en Cobra;
+3. si se ejecuta `self-check`, valida config, carpetas, escritura y SQL Server, e informa el resultado;
+4. si se ejecuta `run`, carga TOML y `.env`;
 5. inicializa logging;
-6. arma el runtime del batch desde `internal/bootstrap/batch.go`;
+6. arma el runtime del batch desde `internal/app/runbatch/runtime.go`;
 7. ejecuta el SP de providers habilitados;
 8. descubre archivos `.xlsx` únicamente dentro de carpetas válidas de providers;
 9. arma un `FileJob` por archivo;
@@ -204,54 +203,63 @@ Eso vuelve al sistema:
 
 ---
 
-## Bootstrap y arranque real
+## Arranque real
 
 Todo empieza en `main.go`.
 
 ### Responsabilidad de `main`
 
-`main` fue dejado deliberadamente como orquestador puro. No contiene lógica de negocio del batch ni el wiring detallado de dependencias.
+`main` fue dejado deliberadamente mínimo. No contiene lógica de negocio del batch, no parsea flags a mano y no hace wiring técnico.
 
 Su secuencia es:
 
-1. define flags de ejecución;
-2. espera que el usuario elija `--run` o `--self-check`;
-3. si recibe ambos flags, corta y muestra ayuda;
-4. si no recibe ninguno, corta y muestra ayuda;
-5. si recibe `--self-check`, delega a `runSelfCheck`;
-6. si recibe `--run`, delega a `runBatch`.
+1. arranca el binario;
+2. llama a `cli.Execute()`;
+3. sale con el código de salida devuelto por la CLI.
 
-### Rol de `internal/bootstrap`
+### Rol de `internal/cli`
 
-Después del refactor actual, el arranque técnico ya no vive en `main.go`.
+La capa `internal/cli` centraliza el uso de Cobra.
+
+Hoy:
+
+1. define el comando raíz `StockCentralUploadListProductsV2`;
+2. declara los flags persistentes `--settings` y `--env`;
+3. registra los subcomandos `run` y `self-check`;
+4. delega cada acción concreta a la capa `internal/app`.
+
+### Rol de `internal/app`
+
+Después del refactor actual, el arranque técnico ya no vive en `main.go` ni en la CLI.
 
 Ahora:
 
-1. `main.go` decide el modo y controla códigos de salida;
-2. `internal/bootstrap/batch.go` arma el runtime concreto del batch;
-3. `internal/bootstrap/selfcheck.go` implementa el modo `--self-check`.
+1. `internal/app/runbatch/service.go` coordina la ejecución del caso de uso `run`;
+2. `internal/app/runbatch/runtime.go` arma el runtime concreto del batch;
+3. `internal/app/selfcheck/service.go` coordina el caso de uso `self-check`;
+4. `internal/app/selfcheck/checks.go` implementa las verificaciones técnicas del `self-check`.
 
-### Modo `--run`
+### Subcomando `run`
 
-Cuando se elige `--run`, la secuencia es:
+Cuando se elige `run`, la secuencia es:
 
 1. crea `context.Background()`;
 2. carga config con `MustLoad`;
 3. inicializa logging;
-4. llama a `bootstrap.BuildBatch(cfg, logs)`;
-5. dentro de ese bootstrap se abre SQL Server;
+4. llama a `runbatch.BuildBatch(cfg, logs)`;
+5. dentro de ese runtime se abre SQL Server;
 6. se construyen repositorio de providers, scanner, reader de Excel, client de productos, resolver de categorías, downloader de imágenes, mover, servicio de notificaciones y writer de resultados;
 7. se construye `FileProcessor`;
 8. se construye `Processor`;
-9. `main` registra la configuración operativa con `bootstrap.LogBatchBootstrap`;
+9. la capa `runbatch` registra la configuración operativa con `runbatch.LogBatchBootstrap`;
 10. ejecuta `runtime.Processor.Run(ctx)`;
 11. si falla, termina con exit code `1`;
-12. si sale bien, registra el resumen final con `bootstrap.LogBatchFinished`;
+12. si sale bien, registra el resumen final con `runbatch.LogBatchFinished`;
 13. al salir, intenta cerrar los recursos abiertos por el runtime.
 
-### Modo `--self-check`
+### Subcomando `self-check`
 
-Cuando se elige `--self-check`, el proceso no toca Excels ni corre el batch.
+Cuando se elige `self-check`, el proceso no toca Excels ni corre el batch.
 
 En cambio:
 
@@ -271,6 +279,8 @@ En cambio:
 
 No:
 
+- parsea flags manualmente;
+- define subcomandos ni opciones manualmente;
 - abre SQL Server;
 - construye repositorios o clients concretos;
 - abre archivos Excel;
@@ -293,7 +303,7 @@ La configuración se divide en dos fuentes:
 
 ### TOML
 
-En `go/config/appsettings.toml` viven:
+En `config/appsettings.toml` viven:
 
 - datos generales de app;
 - parámetros del batch;
@@ -334,7 +344,7 @@ Y además, si las notificaciones están habilitadas:
 
 ### Self-check operativo
 
-Además de la validación mínima del loader, hoy existe un modo `--self-check`
+Además de la validación mínima del loader, hoy existe un subcomando `self-check`
 que hace verificaciones más "de ambiente" antes de correr nada.
 
 Ese modo confirma:
@@ -440,7 +450,7 @@ Se aplica con `lumberjack`, según config:
 
 Ejemplos:
 
-- bootstrap del batch;
+- arranque del batch;
 - paths;
 - settings principales;
 - cantidad de providers;
@@ -2068,9 +2078,9 @@ Las salta limpiamente.
 Esta es la secuencia end-to-end real de la V2 hoy:
 
 1. arranca el binario;
-2. espera un modo explícito;
-3. si se eligió `--self-check`, ejecuta solo verificaciones técnicas y termina;
-4. si se eligió `--run`, carga `appsettings.toml`;
+2. delega la ejecución a la CLI;
+3. si se eligió `self-check`, ejecuta solo verificaciones técnicas y termina;
+4. si se eligió `run`, carga `appsettings.toml`;
 5. intenta cargar `.env`;
 6. valida configuración mínima;
 7. levanta `summary` y `detail`;

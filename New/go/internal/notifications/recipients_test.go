@@ -5,7 +5,7 @@ import (
 	"testing"
 
 	appconfig "stockcentraluploadlistproductsv2/internal/config"
-	"stockcentraluploadlistproductsv2/internal/domain"
+	"stockcentraluploadlistproductsv2/internal/providers"
 )
 
 // Este archivo prueba la resolución final de destinatarios de notificación.
@@ -20,7 +20,7 @@ func TestResolveRecipientsDeduplicatesAndTrims(t *testing.T) {
 			"soporte@ctcgroup.com.ar",
 		},
 	}
-	provider := domain.Provider{
+	provider := providers.Provider{
 		Email: " catalogos@ctcgroup.com.ar ",
 	}
 

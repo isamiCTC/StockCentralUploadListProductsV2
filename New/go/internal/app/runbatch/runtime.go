@@ -1,4 +1,4 @@
-package bootstrap
+package runbatch
 
 import (
 	"fmt"
@@ -7,20 +7,26 @@ import (
 	"stockcentraluploadlistproductsv2/internal/batch"
 	"stockcentraluploadlistproductsv2/internal/catalog"
 	appconfig "stockcentraluploadlistproductsv2/internal/config"
-	"stockcentraluploadlistproductsv2/internal/domain"
-	"stockcentraluploadlistproductsv2/internal/excel"
-	"stockcentraluploadlistproductsv2/internal/files"
 	"stockcentraluploadlistproductsv2/internal/images"
+	"stockcentraluploadlistproductsv2/internal/intake"
 	"stockcentraluploadlistproductsv2/internal/logging"
 	"stockcentraluploadlistproductsv2/internal/notifications"
 	"stockcentraluploadlistproductsv2/internal/products"
 	"stockcentraluploadlistproductsv2/internal/providers"
+	"stockcentraluploadlistproductsv2/internal/reporting"
 	"stockcentraluploadlistproductsv2/internal/results"
+	"stockcentraluploadlistproductsv2/internal/workbook"
 )
 
 // Este archivo concentra el arranque técnico del modo batch.
 // Su responsabilidad es construir el runtime completo del proceso y dejar
 // centralizado el logging de inicio y cierre de la corrida.
+//
+// En otras palabras, este archivo responde una pregunta puntual:
+// "¿qué objetos concretos hay que crear para que el batch pueda correr?"
+//
+// Tener este wiring junto evita que alguien tenga que saltar entre muchos
+// archivos solo para entender cómo nace la aplicación.
 
 // BatchRuntime agrupa el batch ya construido y cómo cerrar sus recursos.
 type BatchRuntime struct {
@@ -45,18 +51,26 @@ func BuildBatch(cfg appconfig.Config, logs logging.LoggerSet) (BatchRuntime, err
 	}
 
 	// A partir de SQL armamos el resto de los componentes base.
+	// Cada uno cubre una parte concreta del flujo:
+	// - traer providers;
+	// - descubrir archivos;
+	// - leer Excel;
+	// - hablar con APIs;
+	// - mover archivos;
+	// - escribir resultados;
+	// - y notificar.
 	providerRepo := providers.NewSQLServerRepository(sqlServer, cfg.Database)
-	scanner := files.NewScanner(cfg.Paths.InputRoot)
-	excelReader := excel.NewReader()
+	scanner := intake.NewScanner(cfg.Paths.InputRoot)
+	excelReader := workbook.NewReader()
 	productsClient := products.NewClient(cfg.ProductsAPI, cfg.Secrets.ProductsAPIToken)
 	categoryResolver := catalog.NewResolver(productsClient)
 	imageDownloader := images.NewDownloader(60 * time.Second)
-	mover := files.NewMover(cfg.Paths.ProcessingRoot, cfg.Paths.ProcessedRoot)
+	mover := intake.NewMover(cfg.Paths.ProcessingRoot, cfg.Paths.ProcessedRoot)
 	sendGridClient := notifications.NewSendGridClient(cfg.Secrets.SendGridAPIKey)
 	notificationService := notifications.NewService(cfg.Notifications, sendGridClient, logs)
 	resultsWriter := results.NewWriter()
 
-	// FileProcessor concentra el trabajo por archivo.
+	// FileProcessor concentra el trabajo completo de un archivo individual.
 	fileProcessor := batch.NewFileProcessor(
 		cfg.Batch.RowWorkers,
 		time.Duration(cfg.Batch.RowTimeoutSeconds)*time.Second,
@@ -71,7 +85,7 @@ func BuildBatch(cfg appconfig.Config, logs logging.LoggerSet) (BatchRuntime, err
 		logs,
 	)
 
-	// Processor es el orquestador global de toda la corrida batch.
+	// Processor se ocupa de la corrida completa: providers -> archivos -> métricas.
 	processor := batch.NewProcessor(cfg.Batch, providerRepo, scanner, fileProcessor, logs)
 
 	// Devolvemos el runtime listo para correr junto con su función de cierre.
@@ -110,7 +124,7 @@ func LogBatchBootstrap(logs logging.LoggerSet, cfg appconfig.Config) {
 }
 
 // LogBatchFinished escribe el cierre resumido y técnico de la corrida.
-func LogBatchFinished(logs logging.LoggerSet, result domain.BatchResult) {
+func LogBatchFinished(logs logging.LoggerSet, result reporting.BatchResult) {
 	// Summary deja el panorama operativo; Detail agrega timestamps y duración.
 	logs.Summary.Info("batch-finished",
 		logging.Int("providers_seen", result.ProvidersSeen),

@@ -8,7 +8,6 @@ import (
 	"strings"
 
 	appconfig "stockcentraluploadlistproductsv2/internal/config"
-	"stockcentraluploadlistproductsv2/internal/domain"
 )
 
 // Este archivo implementa el repositorio real de providers contra SQL Server.
@@ -35,7 +34,7 @@ func NewSQLServerRepository(server *SQLServer, cfg appconfig.DatabaseConfig) *SQ
 // En vez de depender de posiciones fijas del resultset, busca las columnas
 // `ID`, `Name` y opcionalmente `Email` por nombre. Eso hace la lectura un poco
 // más robusta frente a cambios menores en el orden de columnas.
-func (r *SQLServerRepository) ListEnabledByIntegratorAndCatalog(ctx context.Context, integratorID, catalogID int) ([]domain.Provider, error) {
+func (r *SQLServerRepository) ListEnabledByIntegratorAndCatalog(ctx context.Context, integratorID, catalogID int) ([]Provider, error) {
 	// Ejecutamos el SP de forma explícita para dejar visible qué parámetros
 	// salen desde la aplicación.
 	rows, err := r.server.QueryContext(
@@ -80,7 +79,7 @@ func (r *SQLServerRepository) ListEnabledByIntegratorAndCatalog(ctx context.Cont
 	}
 
 	// Recorremos todas las filas y las convertimos al modelo mínimo del dominio.
-	var providers []domain.Provider
+	var providers []Provider
 	for rows.Next() {
 		// Cada fila del resultset representa un provider elegible.
 		provider, scanErr := scanProviderRow(rows, idIndex, nameIndex, emailIndex, len(columns))
@@ -99,7 +98,7 @@ func (r *SQLServerRepository) ListEnabledByIntegratorAndCatalog(ctx context.Cont
 
 // scanProviderRow toma una fila ya posicionada y extrae `ID`, `Name` y
 // opcionalmente `Email`. El resto de columnas del SP se ignora.
-func scanProviderRow(rows *sql.Rows, idIndex, nameIndex, emailIndex, columnsCount int) (domain.Provider, error) {
+func scanProviderRow(rows *sql.Rows, idIndex, nameIndex, emailIndex, columnsCount int) (Provider, error) {
 	rawValues := make([]sql.RawBytes, columnsCount)
 	destinations := make([]any, columnsCount)
 	for i := range rawValues {
@@ -109,12 +108,12 @@ func scanProviderRow(rows *sql.Rows, idIndex, nameIndex, emailIndex, columnsCoun
 	}
 
 	if err := rows.Scan(destinations...); err != nil {
-		return domain.Provider{}, fmt.Errorf("scan provider row: %w", err)
+		return Provider{}, fmt.Errorf("scan provider row: %w", err)
 	}
 
 	providerID, err := strconv.Atoi(strings.TrimSpace(string(rawValues[idIndex])))
 	if err != nil {
-		return domain.Provider{}, fmt.Errorf("parse provider ID: %w", err)
+		return Provider{}, fmt.Errorf("parse provider ID: %w", err)
 	}
 
 	providerEmail := ""
@@ -123,7 +122,7 @@ func scanProviderRow(rows *sql.Rows, idIndex, nameIndex, emailIndex, columnsCoun
 	}
 
 	// El dominio de batch solo necesita ID, nombre y email.
-	return domain.Provider{
+	return Provider{
 		ID:    providerID,
 		Name:  strings.TrimSpace(string(rawValues[nameIndex])),
 		Email: providerEmail,

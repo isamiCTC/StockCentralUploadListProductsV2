@@ -9,14 +9,14 @@ import (
 	"time"
 
 	"stockcentraluploadlistproductsv2/internal/catalog"
-	"stockcentraluploadlistproductsv2/internal/domain"
-	"stockcentraluploadlistproductsv2/internal/excel"
-	"stockcentraluploadlistproductsv2/internal/files"
 	"stockcentraluploadlistproductsv2/internal/images"
+	"stockcentraluploadlistproductsv2/internal/intake"
 	"stockcentraluploadlistproductsv2/internal/logging"
 	"stockcentraluploadlistproductsv2/internal/notifications"
 	"stockcentraluploadlistproductsv2/internal/products"
+	"stockcentraluploadlistproductsv2/internal/reporting"
 	"stockcentraluploadlistproductsv2/internal/results"
+	"stockcentraluploadlistproductsv2/internal/workbook"
 )
 
 // Este archivo modela el procesamiento de un archivo individual.
@@ -30,15 +30,19 @@ import (
 // - notificar el resultado final del archivo
 // - mover el original a `processed`
 // - escribir el Excel de `Resultados` o `ErroresEstructura`
+//
+// Es, en la práctica, el corazón más largo del proceso.
+// Por eso este archivo está comentado de forma bastante guiada: la idea es que
+// alguien pueda seguirlo casi como si fuera un paso a paso narrado.
 type FileProcessor struct {
 	rowWorkers      int
 	rowTimeout      time.Duration
 	syncImages      bool
 	catalogResolver *catalog.Resolver
-	excelReader     *excel.Reader
+	excelReader     *workbook.Reader
 	imageDownloader *images.Downloader
 	productsClient  *products.Client
-	mover           *files.Mover
+	mover           *intake.Mover
 	notifier        *notifications.Service
 	resultsWriter   *results.Writer
 	logs            logging.LoggerSet
@@ -50,10 +54,10 @@ func NewFileProcessor(
 	rowTimeout time.Duration,
 	syncImages bool,
 	catalogResolver *catalog.Resolver,
-	excelReader *excel.Reader,
+	excelReader *workbook.Reader,
 	imageDownloader *images.Downloader,
 	productsClient *products.Client,
-	mover *files.Mover,
+	mover *intake.Mover,
 	notifier *notifications.Service,
 	resultsWriter *results.Writer,
 	logs logging.LoggerSet,
@@ -81,11 +85,12 @@ func NewFileProcessor(
 }
 
 // Process ejecuta el flujo completo de un archivo.
-func (p *FileProcessor) Process(ctx context.Context, job domain.FileJob) (domain.FileResult, error) {
-	// Guardamos el inicio para poder devolver duración y timestamps consistentes.
+func (p *FileProcessor) Process(ctx context.Context, job intake.FileJob) (reporting.FileResult, error) {
+	// Paso 0. Guardar cuándo empezó este archivo.
+	// Lo usamos después para métricas y auditoría.
 	startedAt := time.Now()
 
-	// A partir del job base armamos todas las rutas derivadas:
+	// Paso 1. A partir del job base armamos todas las rutas derivadas:
 	// processing, processed y archivos auxiliares de salida.
 	job = p.mover.BuildPaths(job)
 
@@ -101,14 +106,14 @@ func (p *FileProcessor) Process(ctx context.Context, job domain.FileJob) (domain
 		logging.String("file", job.InputPath),
 	)
 
-	// Antes de leerlo, movemos el archivo a `processing` para separarlo
+	// Paso 2. Antes de leerlo, movemos el archivo a `processing` para separarlo
 	// claramente de los archivos todavía pendientes.
 	job, err := p.mover.MoveToProcessing(job)
 	if err != nil {
-		return domain.FileResult{
+		return reporting.FileResult{
 			ProviderID:    job.ProviderID,
 			InputPath:     job.InputPath,
-			Status:        domain.FileStatusFailed,
+			Status:        reporting.FileStatusFailed,
 			StartedAt:     startedAt,
 			FinishedAt:    time.Now(),
 			FailureReason: err.Error(),
@@ -120,41 +125,43 @@ func (p *FileProcessor) Process(ctx context.Context, job domain.FileJob) (domain
 		logging.String("processing_path", job.ProcessingPath),
 	)
 
-	// La lectura del reader ya incluye validaciones estructurales básicas.
-	workbook, err := p.excelReader.Read(job.ProcessingPath)
+	// Paso 3. Leer el Excel.
+	// El reader ya devuelve metadata útil y validaciones estructurales básicas.
+	workbookData, err := p.excelReader.Read(job.ProcessingPath)
 	if err != nil {
-		return domain.FileResult{
+		return reporting.FileResult{
 			ProviderID:     job.ProviderID,
 			InputPath:      job.InputPath,
 			ProcessingPath: job.ProcessingPath,
-			Status:         domain.FileStatusFailed,
+			Status:         reporting.FileStatusFailed,
 			StartedAt:      startedAt,
 			FinishedAt:     time.Now(),
 			FailureReason:  err.Error(),
 		}, err
 	}
 
-	// Si el layout del Excel no sirve, entramos en un flujo especial que
+	// Paso 4. Si el layout del Excel no sirve, entramos en un flujo especial que
 	// escribe `ErroresEstructura` en lugar de resultados por fila.
-	if !workbook.IsStructureValid() {
-		return p.finishWithStructureErrors(ctx, startedAt, job, workbook)
+	if !workbookData.IsStructureValid() {
+		return p.finishWithStructureErrors(ctx, startedAt, job, workbookData)
 	}
 
-	// A esta altura el archivo ya tiene estructura válida y se puede mapear.
+	// Paso 5. A esta altura el archivo ya tiene estructura válida y se puede mapear.
 	p.logs.Detail.Info("excel-validated",
 		logging.Int("provider_id", job.ProviderID),
-		logging.String("sheet_name", workbook.SheetName),
-		logging.String("format", string(workbook.Format)),
-		logging.Int("rows_detected", countNonEmptyRows(workbook.Rows)),
+		logging.String("sheet_name", workbookData.SheetName),
+		logging.String("format", string(workbookData.Format)),
+		logging.Int("rows_detected", countNonEmptyRows(workbookData.Rows)),
 	)
 
-	mappedRows, err := excel.MapRows(workbook)
+	// Paso 6. Convertir filas crudas en filas tipadas que el negocio pueda usar.
+	mappedRows, err := workbook.MapRows(workbookData)
 	if err != nil {
-		return domain.FileResult{
+		return reporting.FileResult{
 			ProviderID:     job.ProviderID,
 			InputPath:      job.InputPath,
 			ProcessingPath: job.ProcessingPath,
-			Status:         domain.FileStatusFailed,
+			Status:         reporting.FileStatusFailed,
 			StartedAt:      startedAt,
 			FinishedAt:     time.Now(),
 			FailureReason:  err.Error(),
@@ -170,42 +177,45 @@ func (p *FileProcessor) Process(ctx context.Context, job domain.FileJob) (domain
 		logging.Int("skipped_rows", skippedRows),
 	)
 
-	rowResults, err := p.processMappedRows(ctx, job.ProviderID, workbook.Format, mappedRows)
+	// Paso 7. Procesar las filas reales del archivo.
+	// Acá recién empiezan llamadas a API, categorías, imágenes, etc.
+	rowResults, err := p.processMappedRows(ctx, job.ProviderID, workbookData.Format, mappedRows)
 	if err != nil {
-		return domain.FileResult{
+		return reporting.FileResult{
 			ProviderID:     job.ProviderID,
 			InputPath:      job.InputPath,
 			ProcessingPath: job.ProcessingPath,
-			Status:         domain.FileStatusFailed,
+			Status:         reporting.FileStatusFailed,
 			StartedAt:      startedAt,
 			FinishedAt:     time.Now(),
 			FailureReason:  err.Error(),
 		}, err
 	}
 
-	// Recién cuando ya tenemos todos los resultados por fila movemos el
+	// Paso 8. Recién cuando ya tenemos todos los resultados por fila movemos el
 	// original a `processed`.
 	job, err = p.mover.MoveToProcessed(job)
 	if err != nil {
-		return domain.FileResult{
+		return reporting.FileResult{
 			ProviderID:     job.ProviderID,
 			InputPath:      job.InputPath,
 			ProcessingPath: job.ProcessingPath,
-			Status:         domain.FileStatusFailed,
+			Status:         reporting.FileStatusFailed,
 			StartedAt:      startedAt,
 			FinishedAt:     time.Now(),
 			FailureReason:  err.Error(),
 		}, err
 	}
 
-	// Este Excel es la salida principal para auditoría fila por fila.
+	// Paso 9. Escribir el Excel final de resultados.
+	// Este archivo es lo que normalmente va a mirar negocio.
 	if err := p.resultsWriter.WriteRowResults(job.ResultsPath, rowResults); err != nil {
-		return domain.FileResult{
+		return reporting.FileResult{
 			ProviderID:      job.ProviderID,
 			InputPath:       job.InputPath,
 			ProcessingPath:  job.ProcessingPath,
 			ProcessedPath:   job.ProcessedPath,
-			Status:          domain.FileStatusFailed,
+			Status:          reporting.FileStatusFailed,
 			StartedAt:       startedAt,
 			FinishedAt:      time.Now(),
 			FailureReason:   err.Error(),
@@ -213,15 +223,15 @@ func (p *FileProcessor) Process(ctx context.Context, job domain.FileJob) (domain
 		}, fmt.Errorf("write row results workbook: %w", err)
 	}
 
-	// Consolidamos métricas finales del archivo a partir del resultado de filas.
+	// Paso 10. Consolidar métricas finales del archivo a partir de las filas.
 	processedRows, successfulRows, partialRows, errorRows := summarizeRowResults(rowResults)
-	result := domain.FileResult{
+	result := reporting.FileResult{
 		ProviderID:          job.ProviderID,
 		InputPath:           job.InputPath,
 		ProcessingPath:      job.ProcessingPath,
 		ProcessedPath:       job.ProcessedPath,
 		Status:              resolveFileStatus(errorRows, partialRows),
-		DetectedRows:        countNonEmptyRows(workbook.Rows),
+		DetectedRows:        countNonEmptyRows(workbookData.Rows),
 		ProcessedRows:       processedRows,
 		SkippedRows:         skippedRows,
 		SuccessfulRows:      successfulRows,
@@ -253,7 +263,8 @@ func (p *FileProcessor) Process(ctx context.Context, job domain.FileJob) (domain
 		logging.String("results_path", result.ResultsFilePath),
 	)
 
-	// La notificación se intenta al final y nunca rompe el resultado del archivo.
+	// Paso 11. Intentar notificación al final.
+	// Si el mail falla, lo registramos, pero no "deshacemos" el trabajo del archivo.
 	p.notifyFileProcessed(ctx, job, result)
 
 	return result, nil
@@ -261,9 +272,12 @@ func (p *FileProcessor) Process(ctx context.Context, job domain.FileJob) (domain
 
 // finishWithStructureErrors cierra el flujo especial cuando el layout del
 // Excel es inválido y se debe generar `ErroresEstructura`.
-func (p *FileProcessor) finishWithStructureErrors(ctx context.Context, startedAt time.Time, job domain.FileJob, workbook excel.Workbook) (domain.FileResult, error) {
+func (p *FileProcessor) finishWithStructureErrors(ctx context.Context, startedAt time.Time, job intake.FileJob, workbookData workbook.Workbook) (reporting.FileResult, error) {
+	// Este camino es más corto que el flujo normal porque no procesa filas:
+	// el archivo queda rechazado por estructura antes de llegar al negocio.
+
 	// Registramos uno por uno los problemas estructurales encontrados.
-	for _, structureError := range workbook.StructureErrors {
+	for _, structureError := range workbookData.StructureErrors {
 		p.logs.Detail.Error("excel-structure-error",
 			logging.Int("provider_id", job.ProviderID),
 			logging.String("field", structureError.Field),
@@ -276,11 +290,11 @@ func (p *FileProcessor) finishWithStructureErrors(ctx context.Context, startedAt
 	// para no reintentarlo como si siguiera pendiente.
 	job, moveErr := p.mover.MoveToProcessed(job)
 	if moveErr != nil {
-		return domain.FileResult{
+		return reporting.FileResult{
 			ProviderID:     job.ProviderID,
 			InputPath:      job.InputPath,
 			ProcessingPath: job.ProcessingPath,
-			Status:         domain.FileStatusFailed,
+			Status:         reporting.FileStatusFailed,
 			StartedAt:      startedAt,
 			FinishedAt:     time.Now(),
 			FailureReason:  moveErr.Error(),
@@ -289,13 +303,13 @@ func (p *FileProcessor) finishWithStructureErrors(ctx context.Context, startedAt
 
 	// En este escenario generamos una planilla de estructura en vez de una
 	// planilla de resultados por fila.
-	if err := p.resultsWriter.WriteStructureErrors(job.StructureErrPath, workbook.StructureErrors); err != nil {
-		return domain.FileResult{
+	if err := p.resultsWriter.WriteStructureErrors(job.StructureErrPath, workbookData.StructureErrors); err != nil {
+		return reporting.FileResult{
 			ProviderID:          job.ProviderID,
 			InputPath:           job.InputPath,
 			ProcessingPath:      job.ProcessingPath,
 			ProcessedPath:       job.ProcessedPath,
-			Status:              domain.FileStatusFailed,
+			Status:              reporting.FileStatusFailed,
 			StartedAt:           startedAt,
 			FinishedAt:          time.Now(),
 			FailureReason:       err.Error(),
@@ -303,13 +317,13 @@ func (p *FileProcessor) finishWithStructureErrors(ctx context.Context, startedAt
 		}, fmt.Errorf("write structure errors workbook: %w", err)
 	}
 
-	result := domain.FileResult{
+	result := reporting.FileResult{
 		ProviderID:          job.ProviderID,
 		InputPath:           job.InputPath,
 		ProcessingPath:      job.ProcessingPath,
 		ProcessedPath:       job.ProcessedPath,
-		Status:              domain.FileStatusStructureError,
-		DetectedRows:        countNonEmptyRows(workbook.Rows),
+		Status:              reporting.FileStatusStructureError,
+		DetectedRows:        countNonEmptyRows(workbookData.Rows),
 		StartedAt:           startedAt,
 		FinishedAt:          time.Now(),
 		FailureReason:       "excel structure validation failed",
@@ -330,7 +344,7 @@ func (p *FileProcessor) finishWithStructureErrors(ctx context.Context, startedAt
 
 // notifyFileProcessed dispara la notificación sin afectar el resultado del
 // archivo si SendGrid falla.
-func (p *FileProcessor) notifyFileProcessed(ctx context.Context, job domain.FileJob, result domain.FileResult) {
+func (p *FileProcessor) notifyFileProcessed(ctx context.Context, job intake.FileJob, result reporting.FileResult) {
 	if p.notifier == nil {
 		return
 	}
@@ -350,7 +364,7 @@ func (p *FileProcessor) notifyFileProcessed(ctx context.Context, job domain.File
 }
 
 // countNonEmptyRows cuenta solo filas con contenido real.
-func countNonEmptyRows(rows []excel.RawRow) int {
+func countNonEmptyRows(rows []workbook.RawRow) int {
 	count := 0
 	for _, row := range rows {
 		if row.IsEmpty {
@@ -362,7 +376,7 @@ func countNonEmptyRows(rows []excel.RawRow) int {
 }
 
 // summarizeMappedRows consolida cuántas filas quedaron vacías, válidas o con error.
-func summarizeMappedRows(rows []excel.MappedRow) (skippedRows, validRows, errorRows int) {
+func summarizeMappedRows(rows []workbook.MappedRow) (skippedRows, validRows, errorRows int) {
 	// Acá solo miramos el resultado del mapper, todavía sin negocio.
 	for _, row := range rows {
 		if row.IsEmpty {
@@ -381,18 +395,18 @@ func summarizeMappedRows(rows []excel.MappedRow) (skippedRows, validRows, errorR
 
 // summarizeRowResults calcula las métricas finales del archivo a partir de
 // los resultados devueltos por cada fila.
-func summarizeRowResults(rows []domain.RowResult) (processedRows, successfulRows, partialRows, errorRows int) {
+func summarizeRowResults(rows []reporting.RowResult) (processedRows, successfulRows, partialRows, errorRows int) {
 	for _, row := range rows {
 		switch row.Status {
-		case domain.RowStatusSkipped:
+		case reporting.RowStatusSkipped:
 			continue
-		case domain.RowStatusError:
+		case reporting.RowStatusError:
 			processedRows++
 			errorRows++
-		case domain.RowStatusPartialOK:
+		case reporting.RowStatusPartialOK:
 			processedRows++
 			partialRows++
-		case domain.RowStatusOK:
+		case reporting.RowStatusOK:
 			processedRows++
 			successfulRows++
 		}
@@ -402,21 +416,21 @@ func summarizeRowResults(rows []domain.RowResult) (processedRows, successfulRows
 }
 
 // resolveFileStatus decide el estado final del archivo.
-func resolveFileStatus(errorRows, partialRows int) domain.FileStatus {
+func resolveFileStatus(errorRows, partialRows int) reporting.FileStatus {
 	if errorRows > 0 || partialRows > 0 {
-		return domain.FileStatusProcessedErrors
+		return reporting.FileStatusProcessedErrors
 	}
 
-	return domain.FileStatusProcessed
+	return reporting.FileStatusProcessed
 }
 
 // processMappedRows procesa filas con un worker pool fijo y devuelve los
 // resultados ordenados por número de fila para escribir luego el Excel.
-func (p *FileProcessor) processMappedRows(ctx context.Context, providerID int, format excel.FileFormat, rows []excel.MappedRow) ([]domain.RowResult, error) {
+func (p *FileProcessor) processMappedRows(ctx context.Context, providerID int, format workbook.FileFormat, rows []workbook.MappedRow) ([]reporting.RowResult, error) {
 	// jobs reparte trabajo a los workers; resultsChan junta lo que devuelve
 	// cada fila ya procesada.
-	jobs := make(chan excel.MappedRow)
-	resultsChan := make(chan domain.RowResult, len(rows))
+	jobs := make(chan workbook.MappedRow)
+	resultsChan := make(chan reporting.RowResult, len(rows))
 
 	var wg sync.WaitGroup
 	for workerIndex := 0; workerIndex < p.rowWorkers; workerIndex++ {
@@ -435,6 +449,8 @@ func (p *FileProcessor) processMappedRows(ctx context.Context, providerID int, f
 	}
 
 	go func() {
+		// Este goroutine solo empuja filas al canal de trabajo.
+		// Separarlo así deja más claro el productor de jobs.
 		defer close(jobs)
 		for _, row := range rows {
 			select {
@@ -453,10 +469,10 @@ func (p *FileProcessor) processMappedRows(ctx context.Context, providerID int, f
 		close(resultsChan)
 	}()
 
-	results := make([]domain.RowResult, 0, len(rows))
+	resultsData := make([]reporting.RowResult, 0, len(rows))
 	for result := range resultsChan {
 		// Los resultados llegan en orden no determinístico por la concurrencia.
-		results = append(results, result)
+		resultsData = append(resultsData, result)
 	}
 
 	if err := ctx.Err(); err != nil {
@@ -464,7 +480,8 @@ func (p *FileProcessor) processMappedRows(ctx context.Context, providerID int, f
 	}
 
 	// Reordenamos por número de fila para que el Excel final sea legible.
-	slices.SortFunc(results, func(a, b domain.RowResult) int {
+	// Sin esto, el orden del worker pool haría más difícil comparar con el Excel original.
+	slices.SortFunc(resultsData, func(a, b reporting.RowResult) int {
 		switch {
 		case a.ExcelRowNumber < b.ExcelRowNumber:
 			return -1
@@ -475,24 +492,24 @@ func (p *FileProcessor) processMappedRows(ctx context.Context, providerID int, f
 		}
 	})
 
-	return results, nil
+	return resultsData, nil
 }
 
 // processSingleRow trata una fila como una transacción lógica completa.
-func (p *FileProcessor) processSingleRow(ctx context.Context, providerID int, format excel.FileFormat, row excel.MappedRow) domain.RowResult {
-	// Las filas vacías no son error: simplemente no hacen nada.
+func (p *FileProcessor) processSingleRow(ctx context.Context, providerID int, format workbook.FileFormat, row workbook.MappedRow) reporting.RowResult {
+	// Paso 1. Las filas vacías no son error: simplemente no hacen nada.
 	if row.IsEmpty {
-		return domain.RowResult{
+		return reporting.RowResult{
 			ProviderID:     providerID,
 			ExcelRowNumber: row.ExcelRowNumber,
 			SKU:            row.SKU,
-			Status:         domain.RowStatusSkipped,
+			Status:         reporting.RowStatusSkipped,
 			Message:        "Fila vacía",
 			Detail:         "La fila no contiene valores útiles y se omite.",
 		}
 	}
 
-	// Si el mapper ya marcó problemas, no entramos a negocio.
+	// Paso 2. Si el mapper ya marcó problemas, no entramos a negocio.
 	if row.HasErrors() {
 		detail := joinRowIssues(row.Issues)
 		p.logs.Detail.Error("row-mapping-error",
@@ -501,34 +518,34 @@ func (p *FileProcessor) processSingleRow(ctx context.Context, providerID int, fo
 			logging.String("sku", row.SKU),
 			logging.String("detail", detail),
 		)
-		return domain.RowResult{
+		return reporting.RowResult{
 			ProviderID:     providerID,
 			ExcelRowNumber: row.ExcelRowNumber,
 			SKU:            row.SKU,
-			Status:         domain.RowStatusError,
+			Status:         reporting.RowStatusError,
 			Message:        "La fila no pasó las validaciones previas",
 			Detail:         detail,
 		}
 	}
 
-	// A partir de acá la fila está lista para ejecutar lógica real.
+	// Paso 3. A partir de acá la fila está lista para ejecutar lógica real.
 	p.logs.Detail.Info(fmt.Sprintf("-------- SKU: %s ----------", row.SKU),
 		logging.Int("provider_id", providerID),
 		logging.Int("excel_row", row.ExcelRowNumber),
 	)
 
-	// El formato define qué camino de negocio aplicar a esa fila.
+	// Paso 4. El formato define qué camino de negocio aplicar a esa fila.
 	switch format {
-	case excel.FileFormatStockUpdate:
+	case workbook.FileFormatStockUpdate:
 		return p.processStockUpdateRow(ctx, providerID, row)
-	case excel.FileFormatFullImport:
+	case workbook.FileFormatFullImport:
 		return p.processFullImportRow(ctx, providerID, row)
 	default:
-		return domain.RowResult{
+		return reporting.RowResult{
 			ProviderID:     providerID,
 			ExcelRowNumber: row.ExcelRowNumber,
 			SKU:            row.SKU,
-			Status:         domain.RowStatusError,
+			Status:         reporting.RowStatusError,
 			Message:        "Formato de archivo no soportado",
 			Detail:         fmt.Sprintf("Formato recibido: %s", format),
 		}
@@ -536,7 +553,7 @@ func (p *FileProcessor) processSingleRow(ctx context.Context, providerID int, fo
 }
 
 // processStockUpdateRow implementa el caso reducido de SKU + STOCK.
-func (p *FileProcessor) processStockUpdateRow(ctx context.Context, providerID int, row excel.MappedRow) domain.RowResult {
+func (p *FileProcessor) processStockUpdateRow(ctx context.Context, providerID int, row workbook.MappedRow) reporting.RowResult {
 	// Arrancamos con una base común y luego la vamos completando.
 	result := baseRowResult(providerID, row)
 	result.ProductResult = "NO_PROCESADO"
@@ -550,7 +567,7 @@ func (p *FileProcessor) processStockUpdateRow(ctx context.Context, providerID in
 	)
 
 	if row.StockUpdate == nil {
-		result.Status = domain.RowStatusError
+		result.Status = reporting.RowStatusError
 		result.Message = "Fila sin payload de stock"
 		result.Detail = "La fila pasó por el worker sin DTO de stock."
 		return result
@@ -559,7 +576,7 @@ func (p *FileProcessor) processStockUpdateRow(ctx context.Context, providerID in
 	// En stock update la única operación de negocio es sincronizar stock.
 	updateMeta, err := p.productsClient.SyncStockLegacy(ctx, providerID, row.StockUpdate.SKU, row.StockUpdate.Stock)
 	if err != nil {
-		result.Status = domain.RowStatusError
+		result.Status = reporting.RowStatusError
 		result.Message, result.Detail = classifyRowError(ctx, "Falló la actualización de stock en la API", err)
 		p.logs.Detail.Error("stock-sync-failed",
 			logging.Int("provider_id", providerID),
@@ -571,7 +588,7 @@ func (p *FileProcessor) processStockUpdateRow(ctx context.Context, providerID in
 	}
 
 	// Si la API respondió bien, la fila queda totalmente OK.
-	result.Status = domain.RowStatusOK
+	result.Status = reporting.RowStatusOK
 	result.ProductResult = "ACTUALIZADO"
 	result.Detail = describeMeta(updateMeta)
 
@@ -586,7 +603,7 @@ func (p *FileProcessor) processStockUpdateRow(ctx context.Context, providerID in
 }
 
 // processFullImportRow implementa la importación completa de 19 columnas.
-func (p *FileProcessor) processFullImportRow(ctx context.Context, providerID int, row excel.MappedRow) domain.RowResult {
+func (p *FileProcessor) processFullImportRow(ctx context.Context, providerID int, row workbook.MappedRow) reporting.RowResult {
 	// Igual que en stock, partimos de un resultado base y lo enriquecemos.
 	result := baseRowResult(providerID, row)
 	result.ProductResult = "NO_PROCESADO"
@@ -599,7 +616,7 @@ func (p *FileProcessor) processFullImportRow(ctx context.Context, providerID int
 	)
 
 	if row.FullImport == nil {
-		result.Status = domain.RowStatusError
+		result.Status = reporting.RowStatusError
 		result.Message = "Fila sin payload completo"
 		result.Detail = "La fila pasó por el worker sin DTO de importación."
 		return result
@@ -608,7 +625,7 @@ func (p *FileProcessor) processFullImportRow(ctx context.Context, providerID int
 	// Primero resolvemos la rama de catálogo que necesita el producto.
 	resolution, err := p.catalogResolver.ResolveBySubcategory(ctx, providerID, row.FullImport.SubCategory)
 	if err != nil {
-		result.Status = domain.RowStatusError
+		result.Status = reporting.RowStatusError
 		result.Message, result.Detail = classifyRowError(ctx, "No se pudo resolver la subcategoría", err)
 		p.logs.Detail.Error("subcategory-resolution-failed",
 			logging.Int("provider_id", providerID),
@@ -649,7 +666,7 @@ func (p *FileProcessor) processFullImportRow(ctx context.Context, providerID int
 	product := p.productsClient.BuildProductFromInput(providerID, input, resolution.Branch)
 	upsertResult, err := p.productsClient.UpsertProductLegacy(ctx, providerID, product)
 	if err != nil {
-		result.Status = domain.RowStatusError
+		result.Status = reporting.RowStatusError
 		result.Message, result.Detail = classifyRowError(ctx, "Falló el alta o actualización del producto", err)
 		p.logs.Detail.Error("product-upsert-failed",
 			logging.Int("provider_id", providerID),
@@ -670,7 +687,7 @@ func (p *FileProcessor) processFullImportRow(ctx context.Context, providerID int
 
 	// Si la sincronización global de imágenes está apagada, la fila termina acá.
 	if !p.syncImages {
-		result.Status = domain.RowStatusOK
+		result.Status = reporting.RowStatusOK
 		result.Message = "Producto impactado sin sincronización de imágenes"
 		result.Detail = "La sincronizacion global de imagenes esta desactivada por configuracion."
 		result.ImagesResult = "NO_APLICA"
@@ -679,7 +696,7 @@ func (p *FileProcessor) processFullImportRow(ctx context.Context, providerID int
 
 	// Si la fila no trajo imágenes válidas, también termina bien acá.
 	if !row.FullImport.SyncImages {
-		result.Status = domain.RowStatusOK
+		result.Status = reporting.RowStatusOK
 		result.Message = "Producto impactado sin sincronización de imágenes"
 		result.Detail = "La fila quedó OK y no trajo URLs válidas de imágenes."
 		result.ImagesResult = "NO_APLICA"
@@ -692,7 +709,7 @@ func (p *FileProcessor) processFullImportRow(ctx context.Context, providerID int
 	// Si el contexto venció durante imágenes, el producto ya pudo haber quedado
 	// impactado, por eso devolvemos PARTIAL_OK.
 	if ctx.Err() != nil {
-		result.Status = domain.RowStatusPartialOK
+		result.Status = reporting.RowStatusPartialOK
 		result.ImagesResult = "PARCIAL"
 		result.Message, result.Detail = classifyRowTimeoutWhileImages(ctx, imagesSynced, imagesFailed, imageDetails)
 		return result
@@ -700,14 +717,14 @@ func (p *FileProcessor) processFullImportRow(ctx context.Context, providerID int
 
 	// También queda parcial si alguna imagen falló aunque el producto se haya creado.
 	if imagesFailed > 0 {
-		result.Status = domain.RowStatusPartialOK
+		result.Status = reporting.RowStatusPartialOK
 		result.ImagesResult = "PARCIAL"
 		result.Message = "Producto impactado con errores en imágenes"
 		result.Detail = strings.Join(imageDetails, " | ")
 		return result
 	}
 
-	result.Status = domain.RowStatusOK
+	result.Status = reporting.RowStatusOK
 	result.ImagesResult = "OK"
 	result.Message = "Producto e imágenes impactados correctamente"
 	result.Detail = fmt.Sprintf("Imagenes sincronizadas correctamente: %d", imagesSynced)
@@ -716,7 +733,7 @@ func (p *FileProcessor) processFullImportRow(ctx context.Context, providerID int
 
 // syncRowImages procesa las imágenes de una fila y devuelve métricas útiles
 // para el Excel final de resultados.
-func (p *FileProcessor) syncRowImages(ctx context.Context, providerID int, row excel.MappedRow) (imagesSynced, imagesFailed int, details []string) {
+func (p *FileProcessor) syncRowImages(ctx context.Context, providerID int, row workbook.MappedRow) (imagesSynced, imagesFailed int, details []string) {
 	if row.FullImport == nil || len(row.FullImport.ImageURLs) == 0 {
 		return 0, 0, nil
 	}
@@ -792,8 +809,8 @@ func (p *FileProcessor) syncRowImages(ctx context.Context, providerID int, row e
 }
 
 // baseRowResult arma la estructura común para cualquier resultado de fila.
-func baseRowResult(providerID int, row excel.MappedRow) domain.RowResult {
-	return domain.RowResult{
+func baseRowResult(providerID int, row workbook.MappedRow) reporting.RowResult {
+	return reporting.RowResult{
 		ProviderID:     providerID,
 		ExcelRowNumber: row.ExcelRowNumber,
 		SKU:            row.SKU,
@@ -801,7 +818,7 @@ func baseRowResult(providerID int, row excel.MappedRow) domain.RowResult {
 }
 
 // joinRowIssues convierte los problemas del mapper en un texto entendible.
-func joinRowIssues(issues []excel.RowIssue) string {
+func joinRowIssues(issues []workbook.RowIssue) string {
 	parts := make([]string, 0, len(issues))
 	for _, issue := range issues {
 		piece := fmt.Sprintf("%s: %s", issue.Field, issue.Message)

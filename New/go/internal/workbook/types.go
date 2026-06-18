@@ -1,4 +1,4 @@
-package excel
+package workbook
 
 // Este archivo reúne los tipos base de la capa Excel.
 //

@@ -1,4 +1,4 @@
-package excel
+package workbook
 
 // Este archivo define los DTOs tipados que salen de la etapa de mapeo.
 //

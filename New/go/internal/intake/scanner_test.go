@@ -1,4 +1,4 @@
-package files
+package intake
 
 import (
 	"context"
@@ -6,7 +6,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"stockcentraluploadlistproductsv2/internal/domain"
+	"stockcentraluploadlistproductsv2/internal/providers"
 )
 
 func TestDiscoverProviderFilesFiltersByProviderAndExtensionAndKeepsRelativePath(t *testing.T) {
@@ -21,7 +21,7 @@ func TestDiscoverProviderFilesFiltersByProviderAndExtensionAndKeepsRelativePath(
 	mustWriteFile(t, filepath.Join(root, "not-a-provider", "skip.xlsx"))
 
 	scanner := NewScanner(root)
-	providers := []domain.Provider{
+	providers := []providers.Provider{
 		{ID: 342, Name: "Provider 342", Email: "p342@example.test"},
 	}
 
@@ -33,7 +33,7 @@ func TestDiscoverProviderFilesFiltersByProviderAndExtensionAndKeepsRelativePath(
 		t.Fatalf("len(jobs) = %d, want 2", len(jobs))
 	}
 
-	got := map[string]domain.FileJob{}
+	got := map[string]FileJob{}
 	for _, job := range jobs {
 		got[filepath.ToSlash(job.RelativePath)] = job
 		if job.ProviderID != 342 {
@@ -65,7 +65,7 @@ func TestDiscoverProviderFilesStopsWhenContextIsCanceled(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 
-	_, err := scanner.DiscoverProviderFiles(ctx, []domain.Provider{{ID: 342}})
+	_, err := scanner.DiscoverProviderFiles(ctx, []providers.Provider{{ID: 342}})
 	if err == nil {
 		t.Fatal("DiscoverProviderFiles should fail when context is canceled")
 	}

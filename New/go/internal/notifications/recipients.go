@@ -5,7 +5,7 @@ import (
 	"strings"
 
 	appconfig "stockcentraluploadlistproductsv2/internal/config"
-	"stockcentraluploadlistproductsv2/internal/domain"
+	"stockcentraluploadlistproductsv2/internal/providers"
 )
 
 // Este archivo resuelve los destinatarios finales de cada notificación.
@@ -16,7 +16,7 @@ import (
 // - eliminar vacíos, espacios y duplicados
 
 // ResolveRecipients devuelve la lista final de destinatarios para un provider.
-func ResolveRecipients(cfg appconfig.NotificationsConfig, provider domain.Provider) []string {
+func ResolveRecipients(cfg appconfig.NotificationsConfig, provider providers.Provider) []string {
 	unique := make(map[string]struct{})
 	recipients := make([]string, 0, len(cfg.AlwaysRecipients)+1)
 

@@ -1,4 +1,4 @@
-package domain
+package reporting
 
 import "time"
 

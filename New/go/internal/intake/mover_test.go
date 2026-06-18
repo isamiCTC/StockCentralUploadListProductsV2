@@ -1,18 +1,16 @@
-package files
+package intake
 
 import (
 	"os"
 	"path/filepath"
 	"testing"
-
-	"stockcentraluploadlistproductsv2/internal/domain"
 )
 
 func TestBuildPathsPreservesProviderAndRelativeStructure(t *testing.T) {
 	t.Parallel()
 
 	mover := NewMover("C:/processing", "C:/processed")
-	job := domain.FileJob{
+	job := FileJob{
 		ProviderID:   342,
 		RelativePath: filepath.Join("sub1", "sub2", "catalog.xlsx"),
 	}
@@ -49,7 +47,7 @@ func TestMoveToProcessingAndProcessedMovesFileAndUpdatesInputPath(t *testing.T) 
 	}
 
 	mover := NewMover(processingRoot, processedRoot)
-	job := mover.BuildPaths(domain.FileJob{
+	job := mover.BuildPaths(FileJob{
 		ProviderID:   342,
 		InputPath:    inputPath,
 		RelativePath: "catalog.xlsx",

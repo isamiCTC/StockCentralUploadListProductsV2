@@ -7,10 +7,10 @@ import (
 	"time"
 
 	appconfig "stockcentraluploadlistproductsv2/internal/config"
-	"stockcentraluploadlistproductsv2/internal/domain"
-	"stockcentraluploadlistproductsv2/internal/files"
+	"stockcentraluploadlistproductsv2/internal/intake"
 	"stockcentraluploadlistproductsv2/internal/logging"
 	"stockcentraluploadlistproductsv2/internal/providers"
+	"stockcentraluploadlistproductsv2/internal/reporting"
 )
 
 // Este archivo contiene el orquestador principal del batch.
@@ -23,7 +23,7 @@ import (
 type Processor struct {
 	cfg           appconfig.BatchConfig
 	providerRepo  providers.ProviderRepository
-	scanner       *files.Scanner
+	scanner       *intake.Scanner
 	fileProcessor *FileProcessor
 	logs          logging.LoggerSet
 }
@@ -32,7 +32,7 @@ type Processor struct {
 func NewProcessor(
 	cfg appconfig.BatchConfig,
 	providerRepo providers.ProviderRepository,
-	scanner *files.Scanner,
+	scanner *intake.Scanner,
 	fileProcessor *FileProcessor,
 	logs logging.LoggerSet,
 ) *Processor {
@@ -46,18 +46,20 @@ func NewProcessor(
 }
 
 // Run ejecuta una corrida completa del batch de principio a fin.
-func (p *Processor) Run(ctx context.Context) (domain.BatchResult, error) {
+func (p *Processor) Run(ctx context.Context) (reporting.BatchResult, error) {
 	// Desde este momento empezamos a medir la corrida global.
-	result := domain.BatchResult{StartedAt: time.Now()}
+	result := reporting.BatchResult{StartedAt: time.Now()}
 
 	// Paso 1. Traer providers válidos desde la fuente configurada.
-	providers, err := p.providerRepo.ListEnabledByIntegratorAndCatalog(ctx, p.cfg.ProviderIntegratorID, p.cfg.CatalogID)
+	// Esto define qué carpetas del input son "legítimas" para esta corrida.
+	providerList, err := p.providerRepo.ListEnabledByIntegratorAndCatalog(ctx, p.cfg.ProviderIntegratorID, p.cfg.CatalogID)
 	if err != nil {
 		return result, fmt.Errorf("list providers from repository: %w", err)
 	}
 
 	// Ordenamos por ID para tener un orden estable y más fácil de auditar.
-	slices.SortFunc(providers, func(a, b domain.Provider) int {
+	// Así dos corridas equivalentes recorren providers en el mismo orden.
+	slices.SortFunc(providerList, func(a, b providers.Provider) int {
 		switch {
 		case a.ID < b.ID:
 			return -1
@@ -68,18 +70,19 @@ func (p *Processor) Run(ctx context.Context) (domain.BatchResult, error) {
 		}
 	})
 
-	result.ProvidersSeen = len(providers)
-	result.ProvidersActive = len(providers)
+	result.ProvidersSeen = len(providerList)
+	result.ProvidersActive = len(providerList)
 
 	// Dejamos auditado cuántos providers participaron efectivamente.
 	p.logs.Summary.Info("providers-loaded",
 		logging.Int("catalog_id", p.cfg.CatalogID),
 		logging.Int("provider_integrator_id", p.cfg.ProviderIntegratorID),
-		logging.Int("providers_count", len(providers)),
+		logging.Int("providers_count", len(providerList)),
 	)
 
 	// Paso 2. Buscar archivos dentro de carpetas válidas.
-	jobs, err := p.scanner.DiscoverProviderFiles(ctx, providers)
+	// Acá todavía no procesamos nada: solo descubrimos trabajo pendiente.
+	jobs, err := p.scanner.DiscoverProviderFiles(ctx, providerList)
 	if err != nil {
 		return result, fmt.Errorf("discover provider files: %w", err)
 	}
@@ -98,6 +101,8 @@ func (p *Processor) Run(ctx context.Context) (domain.BatchResult, error) {
 
 		if fileErr != nil {
 			// Si el archivo explotó a nivel técnico, lo contamos aparte.
+			// Esto es distinto a "tuvo filas con error": acá falló el archivo
+			// como unidad de trabajo.
 			result.FilesFailed++
 			p.logs.Summary.Error("file-failed",
 				logging.Int("provider_id", job.ProviderID),

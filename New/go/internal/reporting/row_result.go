@@ -1,4 +1,4 @@
-package domain
+package reporting
 
 // Este archivo define el resultado funcional de una fila individual.
 //

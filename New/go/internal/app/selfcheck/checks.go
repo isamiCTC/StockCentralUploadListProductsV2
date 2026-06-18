@@ -1,4 +1,4 @@
-package bootstrap
+package selfcheck
 
 import (
 	"fmt"
@@ -13,6 +13,9 @@ import (
 // Este archivo implementa el modo `--self-check`.
 // Su responsabilidad es validar que configuración, carpetas, logging y SQL
 // estén listos antes de intentar correr el batch real.
+//
+// La idea es fallar antes, no a mitad del procesamiento.
+// Por eso este modo no toca Excels ni hace trabajo de negocio.
 
 // SelfCheckResult representa un chequeo individual del modo self-check.
 type SelfCheckResult struct {
@@ -21,8 +24,8 @@ type SelfCheckResult struct {
 	Detail string
 }
 
-// RunSelfCheck valida el ambiente sin ejecutar el batch real.
-func RunSelfCheck(settingsPath, envPath string, out io.Writer) error {
+// Run valida el ambiente sin ejecutar el batch real.
+func Run(settingsPath, envPath string, out io.Writer) error {
 	// Primero chequeamos archivos base antes de intentar cargar configuración.
 	results := []SelfCheckResult{
 		runCheck("settings-file", func() error {
@@ -33,7 +36,8 @@ func RunSelfCheck(settingsPath, envPath string, out io.Writer) error {
 		}),
 	}
 
-	// Si la configuración no carga, frenamos acá y mostramos lo ya evaluado.
+	// Segundo: intentar cargar la config completa.
+	// Si esto falla, no tiene sentido seguir con carpetas o SQL.
 	cfg, err := appconfig.Load(settingsPath, envPath)
 	if err != nil {
 		results = append(results, SelfCheckResult{
@@ -45,12 +49,14 @@ func RunSelfCheck(settingsPath, envPath string, out io.Writer) error {
 		return fmt.Errorf("self-check failed")
 	}
 
-	// Con config válida podemos seguir con carpetas, logging y SQL.
+	// Tercero: con config válida ya podemos revisar filesystem, logs y SQL.
 	results = append(results, SelfCheckResult{Name: "config-load", OK: true, Detail: "configuration loaded"})
 	results = append(results, collectChecks(cfg)...)
+
+	// Cuarto: imprimir todo junto deja un reporte claro y ordenado.
 	printResults(out, results)
 
-	// El self-check completo falla si al menos una validación quedó en FAIL.
+	// Quinto: si un solo check falla, el comando debe devolver error.
 	for _, result := range results {
 		if !result.OK {
 			return fmt.Errorf("self-check failed")
@@ -112,6 +118,8 @@ func printResults(out io.Writer, results []SelfCheckResult) {
 			status = "FAIL"
 		}
 
+		// La salida es deliberadamente simple para que se lea bien en consola
+		// o se pueda copiar tal cual a un ticket o chat.
 		fmt.Fprintf(out, "[%s] %s", status, result.Name)
 		if result.Detail != "" {
 			fmt.Fprintf(out, " - %s", result.Detail)
@@ -179,27 +187,32 @@ func ensureDirectoryWritable(path string) error {
 		return fmt.Errorf("path is empty")
 	}
 
+	// Paso 1. Crear la carpeta si todavía no existe.
 	if err := os.MkdirAll(path, 0o755); err != nil {
 		return fmt.Errorf("create directory %s: %w", path, err)
 	}
 
+	// Paso 2. Crear un archivo temporal de prueba.
 	testFile, err := os.CreateTemp(path, ".self-check-*")
 	if err != nil {
 		return fmt.Errorf("create temp file in %s: %w", path, err)
 	}
 
 	testName := testFile.Name()
+	// Paso 3. Escribir contenido real, para no quedarnos solo con el create.
 	if _, err := testFile.WriteString("self-check"); err != nil {
 		_ = testFile.Close()
 		_ = os.Remove(testName)
 		return fmt.Errorf("write temp file in %s: %w", path, err)
 	}
 
+	// Paso 4. Cerrar correctamente el archivo.
 	if err := testFile.Close(); err != nil {
 		_ = os.Remove(testName)
 		return fmt.Errorf("close temp file in %s: %w", path, err)
 	}
 
+	// Paso 5. Borrarlo para no ensuciar la carpeta.
 	if err := os.Remove(testName); err != nil {
 		return fmt.Errorf("cleanup temp file in %s: %w", path, err)
 	}

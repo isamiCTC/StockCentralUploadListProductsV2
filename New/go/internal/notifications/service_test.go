@@ -8,8 +8,9 @@ import (
 	"testing"
 
 	appconfig "stockcentraluploadlistproductsv2/internal/config"
-	"stockcentraluploadlistproductsv2/internal/domain"
+	"stockcentraluploadlistproductsv2/internal/intake"
 	"stockcentraluploadlistproductsv2/internal/logging"
+	"stockcentraluploadlistproductsv2/internal/reporting"
 )
 
 func TestNotifyFileProcessedSkipsWhenNotificationsDisabled(t *testing.T) {
@@ -21,7 +22,7 @@ func TestNotifyFileProcessedSkipsWhenNotificationsDisabled(t *testing.T) {
 		FromEmail: "alerts@example.test",
 	}, sender, discardNotificationLoggerSet())
 
-	err := service.NotifyFileProcessed(context.Background(), domain.FileJob{ProviderID: 342}, domain.FileResult{})
+	err := service.NotifyFileProcessed(context.Background(), intake.FileJob{ProviderID: 342}, reporting.FileResult{})
 	if err != nil {
 		t.Fatalf("NotifyFileProcessed returned error: %v", err)
 	}
@@ -40,13 +41,13 @@ func TestNotifyFileProcessedSendsExpectedAttachmentForProcessedWithErrors(t *tes
 		AlwaysRecipients: []string{"ops@example.test"},
 	}, sender, discardNotificationLoggerSet())
 
-	job := domain.FileJob{
+	job := intake.FileJob{
 		ProviderID:    342,
 		ProviderEmail: "provider@example.test",
 		RelativePath:  "sub/catalog.xlsx",
 	}
-	result := domain.FileResult{
-		Status:          domain.FileStatusProcessedErrors,
+	result := reporting.FileResult{
+		Status:          reporting.FileStatusProcessedErrors,
 		ResultsFilePath: "C:/processed/342/sub/catalog.result.xlsx",
 	}
 
@@ -82,12 +83,12 @@ func TestNotifyFileProcessedUsesStructureAttachmentForStructureError(t *testing.
 		AlwaysRecipients: []string{"ops@example.test"},
 	}, sender, discardNotificationLoggerSet())
 
-	job := domain.FileJob{
+	job := intake.FileJob{
 		ProviderID:   342,
 		RelativePath: "catalog.xlsx",
 	}
-	result := domain.FileResult{
-		Status:              domain.FileStatusStructureError,
+	result := reporting.FileResult{
+		Status:              reporting.FileStatusStructureError,
 		StructureErrorsPath: "C:/processed/342/catalog.structure-errors.xlsx",
 	}
 
@@ -110,11 +111,11 @@ func TestNotifyFileProcessedReturnsWrappedSenderError(t *testing.T) {
 		AlwaysRecipients: []string{"ops@example.test"},
 	}, sender, discardNotificationLoggerSet())
 
-	err := service.NotifyFileProcessed(context.Background(), domain.FileJob{
+	err := service.NotifyFileProcessed(context.Background(), intake.FileJob{
 		ProviderID:   342,
 		RelativePath: "catalog.xlsx",
-	}, domain.FileResult{
-		Status:          domain.FileStatusProcessed,
+	}, reporting.FileResult{
+		Status:          reporting.FileStatusProcessed,
 		ResultsFilePath: "C:/processed/342/catalog.result.xlsx",
 	})
 	if err == nil {

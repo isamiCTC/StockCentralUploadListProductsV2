@@ -1,11 +1,9 @@
-package files
+package intake
 
 import (
 	"fmt"
 	"os"
 	"path/filepath"
-
-	"stockcentraluploadlistproductsv2/internal/domain"
 )
 
 // Este archivo centraliza la lógica de rutas y movimientos de archivos.
@@ -27,7 +25,7 @@ func NewMover(processingRoot, processedRoot string) *Mover {
 
 // BuildPaths completa en el `FileJob` todas las rutas derivadas.
 // No mueve nada todavía: solo calcula.
-func (m *Mover) BuildPaths(job domain.FileJob) domain.FileJob {
+func (m *Mover) BuildPaths(job FileJob) FileJob {
 	providerDir := fmt.Sprintf("%d", job.ProviderID)
 
 	// Conservamos la subestructura relativa del archivo dentro de cada raíz.
@@ -48,7 +46,7 @@ func (m *Mover) BuildPaths(job domain.FileJob) domain.FileJob {
 
 // MoveToProcessing mueve el archivo desde input hacia processing.
 // Primero crea la carpeta padre si hace falta.
-func (m *Mover) MoveToProcessing(job domain.FileJob) (domain.FileJob, error) {
+func (m *Mover) MoveToProcessing(job FileJob) (FileJob, error) {
 	// Si la carpeta todavía no existe, la creamos antes de intentar mover.
 	if err := ensureParent(job.ProcessingPath); err != nil {
 		return job, fmt.Errorf("prepare processing destination: %w", err)
@@ -65,7 +63,7 @@ func (m *Mover) MoveToProcessing(job domain.FileJob) (domain.FileJob, error) {
 }
 
 // MoveToProcessed mueve el archivo desde processing hacia processed.
-func (m *Mover) MoveToProcessed(job domain.FileJob) (domain.FileJob, error) {
+func (m *Mover) MoveToProcessed(job FileJob) (FileJob, error) {
 	// Igual que en processing, primero garantizamos la carpeta destino.
 	if err := ensureParent(job.ProcessedPath); err != nil {
 		return job, fmt.Errorf("prepare processed destination: %w", err)

@@ -5,8 +5,8 @@ import (
 	"os"
 	"path/filepath"
 
-	"stockcentraluploadlistproductsv2/internal/domain"
-	"stockcentraluploadlistproductsv2/internal/excel"
+	"stockcentraluploadlistproductsv2/internal/reporting"
+	"stockcentraluploadlistproductsv2/internal/workbook"
 
 	"github.com/xuri/excelize/v2"
 )
@@ -29,7 +29,7 @@ func NewWriter() *Writer {
 }
 
 // WriteRowResults genera el archivo de resultados por SKU.
-func (w *Writer) WriteRowResults(path string, rows []domain.RowResult) error {
+func (w *Writer) WriteRowResults(path string, rows []reporting.RowResult) error {
 	file := excelize.NewFile()
 
 	const sheet = "Resultados"
@@ -59,7 +59,7 @@ func (w *Writer) WriteRowResults(path string, rows []domain.RowResult) error {
 	for _, row := range rows {
 		// Las filas SKIPPED no se escriben para que el archivo final quede
 		// enfocado solo en SKUs reales para negocio.
-		if row.Status == domain.RowStatusSkipped {
+		if row.Status == reporting.RowStatusSkipped {
 			continue
 		}
 
@@ -95,7 +95,7 @@ func (w *Writer) WriteRowResults(path string, rows []domain.RowResult) error {
 }
 
 // WriteStructureErrors genera el archivo de errores estructurales.
-func (w *Writer) WriteStructureErrors(path string, errors []excel.StructureError) error {
+func (w *Writer) WriteStructureErrors(path string, errors []workbook.StructureError) error {
 	file := excelize.NewFile()
 
 	const sheet = "ErroresEstructura"
@@ -228,11 +228,11 @@ func (w *Writer) styleResultsSheet(file *excelize.File, sheet string, lastRow in
 
 		// Solo coloreamos la celda de estado para que el archivo siga sobrio.
 		switch value {
-		case string(domain.RowStatusOK):
+		case string(reporting.RowStatusOK):
 			_ = file.SetCellStyle(sheet, statusCell, statusCell, okStyle)
-		case string(domain.RowStatusPartialOK):
+		case string(reporting.RowStatusPartialOK):
 			_ = file.SetCellStyle(sheet, statusCell, statusCell, partialStyle)
-		case string(domain.RowStatusError):
+		case string(reporting.RowStatusError):
 			_ = file.SetCellStyle(sheet, statusCell, statusCell, errorStyle)
 		}
 	}

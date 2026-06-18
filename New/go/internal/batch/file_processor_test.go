@@ -10,11 +10,11 @@ import (
 
 	"stockcentraluploadlistproductsv2/internal/catalog"
 	appconfig "stockcentraluploadlistproductsv2/internal/config"
-	"stockcentraluploadlistproductsv2/internal/domain"
-	"stockcentraluploadlistproductsv2/internal/excel"
 	"stockcentraluploadlistproductsv2/internal/images"
 	"stockcentraluploadlistproductsv2/internal/logging"
 	"stockcentraluploadlistproductsv2/internal/products"
+	"stockcentraluploadlistproductsv2/internal/reporting"
+	"stockcentraluploadlistproductsv2/internal/workbook"
 )
 
 func TestNewFileProcessorAppliesDefaults(t *testing.T) {
@@ -33,11 +33,11 @@ func TestNewFileProcessorAppliesDefaults(t *testing.T) {
 func TestSummarizeRowResultsIgnoresSkippedAndCountsFinalStates(t *testing.T) {
 	t.Parallel()
 
-	processed, successful, partial, errors := summarizeRowResults([]domain.RowResult{
-		{Status: domain.RowStatusSkipped},
-		{Status: domain.RowStatusOK},
-		{Status: domain.RowStatusPartialOK},
-		{Status: domain.RowStatusError},
+	processed, successful, partial, errors := summarizeRowResults([]reporting.RowResult{
+		{Status: reporting.RowStatusSkipped},
+		{Status: reporting.RowStatusOK},
+		{Status: reporting.RowStatusPartialOK},
+		{Status: reporting.RowStatusError},
 	})
 
 	if processed != 3 || successful != 1 || partial != 1 || errors != 1 {
@@ -48,14 +48,14 @@ func TestSummarizeRowResultsIgnoresSkippedAndCountsFinalStates(t *testing.T) {
 func TestResolveFileStatusReturnsProcessedWithErrorsWhenAnyRowFailedOrPartial(t *testing.T) {
 	t.Parallel()
 
-	if got := resolveFileStatus(0, 0); got != domain.FileStatusProcessed {
-		t.Fatalf("resolveFileStatus(0, 0) = %q, want %q", got, domain.FileStatusProcessed)
+	if got := resolveFileStatus(0, 0); got != reporting.FileStatusProcessed {
+		t.Fatalf("resolveFileStatus(0, 0) = %q, want %q", got, reporting.FileStatusProcessed)
 	}
-	if got := resolveFileStatus(1, 0); got != domain.FileStatusProcessedErrors {
-		t.Fatalf("resolveFileStatus(1, 0) = %q, want %q", got, domain.FileStatusProcessedErrors)
+	if got := resolveFileStatus(1, 0); got != reporting.FileStatusProcessedErrors {
+		t.Fatalf("resolveFileStatus(1, 0) = %q, want %q", got, reporting.FileStatusProcessedErrors)
 	}
-	if got := resolveFileStatus(0, 1); got != domain.FileStatusProcessedErrors {
-		t.Fatalf("resolveFileStatus(0, 1) = %q, want %q", got, domain.FileStatusProcessedErrors)
+	if got := resolveFileStatus(0, 1); got != reporting.FileStatusProcessedErrors {
+		t.Fatalf("resolveFileStatus(0, 1) = %q, want %q", got, reporting.FileStatusProcessedErrors)
 	}
 }
 
@@ -82,23 +82,23 @@ func TestProcessMappedRowsMarksStockRowAsErrorWhenRowTimeoutExpires(t *testing.T
 		logs:           discardLoggerSet(),
 	}
 
-	rows := []excel.MappedRow{
+	rows := []workbook.MappedRow{
 		{
 			ExcelRowNumber: 2,
 			SKU:            "ABC123",
-			StockUpdate:    &excel.StockUpdateRow{SKU: "ABC123", Stock: 10},
+			StockUpdate:    &workbook.StockUpdateRow{SKU: "ABC123", Stock: 10},
 		},
 	}
 
-	results, err := processor.processMappedRows(context.Background(), 342, excel.FileFormatStockUpdate, rows)
+	results, err := processor.processMappedRows(context.Background(), 342, workbook.FileFormatStockUpdate, rows)
 	if err != nil {
 		t.Fatalf("processMappedRows returned error: %v", err)
 	}
 	if len(results) != 1 {
 		t.Fatalf("len(results) = %d, want 1", len(results))
 	}
-	if results[0].Status != domain.RowStatusError {
-		t.Fatalf("Status = %q, want %q", results[0].Status, domain.RowStatusError)
+	if results[0].Status != reporting.RowStatusError {
+		t.Fatalf("Status = %q, want %q", results[0].Status, reporting.RowStatusError)
 	}
 	if results[0].Message != "La fila excedió el timeout configurado" {
 		t.Fatalf("Message = %q, want timeout message", results[0].Message)
@@ -142,10 +142,10 @@ func TestProcessFullImportRowMarksPartialWhenTimeoutExpiresDuringImages(t *testi
 		logs:            discardLoggerSet(),
 	}
 
-	row := excel.MappedRow{
+	row := workbook.MappedRow{
 		ExcelRowNumber: 3,
 		SKU:            "XYZ999",
-		FullImport: &excel.FullImportRow{
+		FullImport: &workbook.FullImportRow{
 			SKU:              "XYZ999",
 			Name:             "Producto test",
 			Brand:            "Marca",
@@ -171,8 +171,8 @@ func TestProcessFullImportRowMarksPartialWhenTimeoutExpiresDuringImages(t *testi
 
 	result := processor.processFullImportRow(rowCtx, 342, row)
 
-	if result.Status != domain.RowStatusPartialOK {
-		t.Fatalf("Status = %q, want %q", result.Status, domain.RowStatusPartialOK)
+	if result.Status != reporting.RowStatusPartialOK {
+		t.Fatalf("Status = %q, want %q", result.Status, reporting.RowStatusPartialOK)
 	}
 	if result.ProductResult != "ACTUALIZADO" {
 		t.Fatalf("ProductResult = %q, want %q", result.ProductResult, "ACTUALIZADO")
