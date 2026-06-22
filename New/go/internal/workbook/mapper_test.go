@@ -37,7 +37,7 @@ func TestMapRowsFullImportHappyPath(t *testing.T) {
 					"ABC123", "Producto", "Marca", "Descripcion", "10", "20", "30",
 					"1500", " https://img1.test/a.jpg & https://img2.test/b.jpg ",
 					"1000", "0,21", "TIPO", "AHORA", "Cat", "Audio", "5", "900",
-					"2026-01-01", "2026-01-31",
+					"01/01/2026", "31/01/2026",
 				},
 			},
 		},
@@ -117,5 +117,143 @@ func TestMapRowsFullImportInvalidImageURLProducesError(t *testing.T) {
 	}
 	if !rows[0].HasErrors() {
 		t.Fatal("mapped row should have an error for invalid image URL")
+	}
+}
+
+func TestMapRowsStockUpdateInvalidSKUProducesError(t *testing.T) {
+	t.Parallel()
+
+	workbook := Workbook{
+		Format: FileFormatStockUpdate,
+		HeaderIndexByKey: map[string]int{
+			NormalizeHeader("SKU"):   0,
+			NormalizeHeader("STOCK"): 1,
+		},
+		Rows: []RawRow{
+			{
+				ExcelRowNumber: 2,
+				Values:         []string{"ABC.123", "5"},
+			},
+		},
+	}
+
+	rows, err := MapRows(workbook)
+	if err != nil {
+		t.Fatalf("MapRows returned error: %v", err)
+	}
+	if len(rows) != 1 {
+		t.Fatalf("rows count = %d, want 1", len(rows))
+	}
+	if !rows[0].HasErrors() {
+		t.Fatal("mapped row should have an error for invalid SKU")
+	}
+	if rows[0].Issues[0].Detail != `Carácter inválido en SKU: "."` {
+		t.Fatalf("issue detail = %q, want %q", rows[0].Issues[0].Detail, `Carácter inválido en SKU: "."`)
+	}
+}
+
+func TestMapRowsFullImportInvalidStartDateProducesError(t *testing.T) {
+	t.Parallel()
+
+	workbook := Workbook{
+		Format: FileFormatFullImport,
+		HeaderIndexByKey: map[string]int{
+			NormalizeHeader("SKU"):             0,
+			NormalizeHeader("NOMBRE"):          1,
+			NormalizeHeader("MARCA"):           2,
+			NormalizeHeader("DESCRIPCION"):     3,
+			NormalizeHeader("ALTO"):            4,
+			NormalizeHeader("ANCHO"):           5,
+			NormalizeHeader("LARGO"):           6,
+			NormalizeHeader("PESO"):            7,
+			NormalizeHeader("URL IMAGENES"):    8,
+			NormalizeHeader("PRECIO"):          9,
+			NormalizeHeader("IVA"):             10,
+			NormalizeHeader("TIPO"):            11,
+			NormalizeHeader("AHORA"):           12,
+			NormalizeHeader("CATEGORIA"):       13,
+			NormalizeHeader("SUB CATEGORIA"):   14,
+			NormalizeHeader("STOCK"):           15,
+			NormalizeHeader("OFERTA"):          16,
+			NormalizeHeader("FECHA DE INICIO"): 17,
+			NormalizeHeader("FECHA DE FIN"):    18,
+		},
+		Rows: []RawRow{
+			{
+				ExcelRowNumber: 2,
+				Values: []string{
+					"ABC123", "Producto", "Marca", "Descripcion", "10", "20", "30",
+					"1500", "", "1000", "21", "TIPO", "AHORA", "Cat", "Audio", "5", "",
+					"2026-01-31", "",
+				},
+			},
+		},
+	}
+
+	rows, err := MapRows(workbook)
+	if err != nil {
+		t.Fatalf("MapRows returned error: %v", err)
+	}
+	if len(rows) != 1 {
+		t.Fatalf("rows count = %d, want 1", len(rows))
+	}
+	if !rows[0].HasErrors() {
+		t.Fatal("mapped row should have an error for invalid start date")
+	}
+	if rows[0].Issues[0].Field != "FECHA DE INICIO" {
+		t.Fatalf("issue field = %q, want %q", rows[0].Issues[0].Field, "FECHA DE INICIO")
+	}
+}
+
+func TestMapRowsFullImportInvalidDateRangeProducesError(t *testing.T) {
+	t.Parallel()
+
+	workbook := Workbook{
+		Format: FileFormatFullImport,
+		HeaderIndexByKey: map[string]int{
+			NormalizeHeader("SKU"):             0,
+			NormalizeHeader("NOMBRE"):          1,
+			NormalizeHeader("MARCA"):           2,
+			NormalizeHeader("DESCRIPCION"):     3,
+			NormalizeHeader("ALTO"):            4,
+			NormalizeHeader("ANCHO"):           5,
+			NormalizeHeader("LARGO"):           6,
+			NormalizeHeader("PESO"):            7,
+			NormalizeHeader("URL IMAGENES"):    8,
+			NormalizeHeader("PRECIO"):          9,
+			NormalizeHeader("IVA"):             10,
+			NormalizeHeader("TIPO"):            11,
+			NormalizeHeader("AHORA"):           12,
+			NormalizeHeader("CATEGORIA"):       13,
+			NormalizeHeader("SUB CATEGORIA"):   14,
+			NormalizeHeader("STOCK"):           15,
+			NormalizeHeader("OFERTA"):          16,
+			NormalizeHeader("FECHA DE INICIO"): 17,
+			NormalizeHeader("FECHA DE FIN"):    18,
+		},
+		Rows: []RawRow{
+			{
+				ExcelRowNumber: 2,
+				Values: []string{
+					"ABC123", "Producto", "Marca", "Descripcion", "10", "20", "30",
+					"1500", "", "1000", "21", "TIPO", "AHORA", "Cat", "Audio", "5", "",
+					"15/07/2026", "10/07/2026",
+				},
+			},
+		},
+	}
+
+	rows, err := MapRows(workbook)
+	if err != nil {
+		t.Fatalf("MapRows returned error: %v", err)
+	}
+	if len(rows) != 1 {
+		t.Fatalf("rows count = %d, want 1", len(rows))
+	}
+	if !rows[0].HasErrors() {
+		t.Fatal("mapped row should have an error for invalid date range")
+	}
+	if rows[0].Issues[0].Message != "Rango de fechas inválido" {
+		t.Fatalf("issue message = %q, want %q", rows[0].Issues[0].Message, "Rango de fechas inválido")
 	}
 }

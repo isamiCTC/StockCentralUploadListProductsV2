@@ -1,10 +1,6 @@
 package catalog
 
-import (
-	"strings"
-
-	"stockcentraluploadlistproductsv2/internal/products"
-)
+import "stockcentraluploadlistproductsv2/internal/products"
 
 // Este archivo guarda el mapeo hardcodeado de categorías heredado del legacy.
 //
@@ -39,8 +35,4 @@ var hardcodedBranches = map[string]products.CategoryBranch{
 var fallbackBranch = products.CategoryBranch{
 	Code: "1041",
 	Name: "Varios",
-}
-
-func normalizeCategoryKey(value string) string {
-	return strings.ToUpper(strings.TrimSpace(value))
 }

@@ -120,27 +120,30 @@ El flujo principal de V2 se reparte entre estos archivos:
 23. `internal/catalog/hardcoded_map.go`
     Mapa hardcodeado heredado del legacy.
 
+24. `internal/catalog/normalize.go`
+    Normalización laxa usada para comparar subcategorías contra el hardcode.
+
 ### Imágenes, resultados, mails y logs
 
-24. `internal/images/downloader.go`
+25. `internal/images/downloader.go`
     Descarga de imágenes y conversión a Base64.
 
-25. `internal/results/writer.go`
+26. `internal/results/writer.go`
     Escritura de `Resultados` y `ErroresEstructura`.
 
-26. `internal/notifications/service.go`
+27. `internal/notifications/service.go`
     Lógica funcional de mails.
 
-27. `internal/notifications/recipients.go`
+28. `internal/notifications/recipients.go`
     Resolución de destinatarios.
 
-28. `internal/notifications/sendgrid.go`
+29. `internal/notifications/sendgrid.go`
     Cliente concreto de SendGrid, el servicio externo usado para enviar mails.
 
-29. `internal/logging/logger.go`
+30. `internal/logging/logger.go`
     Logger propio, formato humano.
 
-30. `internal/logging/factory.go`
+31. `internal/logging/factory.go`
     Construcción de ambos archivos de log con rotación vía `lumberjack`, una librería de Go para rotar archivos de log.
 
 ---
@@ -1052,8 +1055,11 @@ Su trabajo es:
 
 1. fila vacía -> `IsEmpty = true`
 2. SKU vacío -> issue error
-3. stock inválido -> issue error
-4. si no hay errores -> construye `StockUpdateRow`
+3. SKU con caracteres fuera de la whitelist acordada -> issue error
+4. la whitelist de SKU permite solo ASCII alfanumérico, guion `-` y guion bajo `_`
+5. si el SKU trae un carácter inválido, el `detail` informa cuál fue, por ejemplo: `Carácter inválido en SKU: "."`
+6. stock inválido -> issue error
+7. si no hay errores -> construye `StockUpdateRow`
 
 ### Semántica posterior
 
@@ -1100,6 +1106,14 @@ Se validan como requeridos:
 - `CATEGORIA`
 - `SUB CATEGORIA`
 
+### Regla adicional de `SKU`
+
+Además del requerido:
+
+- `SKU` solo acepta caracteres ASCII alfanuméricos, guion `-` y guion bajo `_`;
+- si aparece otro carácter, la fila queda en error;
+- el issue informa el primer carácter inválido detectado.
+
 ### Numéricos obligatorios
 
 Se parsean como requeridos:
@@ -1111,6 +1125,27 @@ Se parsean como requeridos:
 - `PRECIO`
 - `IVA`
 - `STOCK`
+
+### Fechas opcionales
+
+`FECHA DE INICIO` y `FECHA DE FIN` son opcionales.
+
+Si vienen vacías:
+
+- no generan error.
+
+Si vienen con contenido:
+
+- deben parsear con formato estricto `DD/MM/YYYY`;
+- si no cumplen, la fila queda en error;
+- el `detail` informa el valor inválido recibido.
+
+### Rango entre fechas
+
+Si ambas fechas vienen cargadas y las dos parsean bien:
+
+- `FECHA DE INICIO` no puede ser posterior a `FECHA DE FIN`;
+- si el rango es inválido, la fila queda en error con detalle explícito de ambos valores.
 
 ### Campo de imágenes
 
@@ -1402,6 +1437,11 @@ Igual que en el legacy:
 
 Hoy se mapean y se conservan en el DTO, pero no forman parte del payload final a la API de productos.
 
+En el caso de las fechas, antes de conservarlas:
+
+- se valida el formato `DD/MM/YYYY` si vienen cargadas;
+- y se valida que inicio no sea mayor que fin cuando ambas existen.
+
 O sea:
 
 - la V2 preserva el dato y su lectura;
@@ -1429,18 +1469,29 @@ Conserva el conocimiento heredado del `switch` del legacy.
 
 ### Diferencia menor respecto del legacy
 
-La normalización del hardcode se hace con:
+La comparación contra el hardcode usa una normalización propia de `catalog/normalize.go`.
 
-- `strings.ToUpper`
-- `strings.TrimSpace`
+Esa normalización aplica:
 
-No usa una normalización tan rica como headers, pero sí evita problemas básicos de espacios y case.
+- `trim`
+- mayúsculas
+- remoción de tildes
+- colapso de espacios internos
+
+Eso permite que el match hardcodeado tolere variaciones de carga como:
+
+- `CLIMATIZACIÓN`
+- `climatizacion`
+- `  pequeños   electrodomésticos  `
+
+sin alterar el valor original que vino del Excel.
 
 ### Fallback a API
 
 Si no hay match hardcodeado:
 
 - llama `ResolveFirstSubcategory`;
+- usa el valor original de `SUB CATEGORIA`, no la versión normalizada;
 - que a su vez hace `GET /Mp_ProductsAPI_CTC/subcategories/{providerID}/{texto}`;
 - si la API devuelve al menos un item, toma el primero.
 

@@ -5,6 +5,7 @@ import (
 	"math"
 	"net/url"
 	"strings"
+	"time"
 )
 
 // Este archivo transforma filas crudas del workbook en DTOs tipados
@@ -69,6 +70,7 @@ func mapStockUpdateRows(workbook Workbook) []MappedRow {
 				Detail:   "",
 			})
 		}
+		validateSKUFormat(&mapped, sku)
 		if stockErr != nil {
 			mapped.Issues = append(mapped.Issues, RowIssue{
 				Severity: "ERROR",
@@ -129,11 +131,15 @@ func mapFullImportRows(workbook Workbook) []MappedRow {
 		// Después validamos los textos obligatorios.
 		// Esta etapa solo mira presencia de datos, no parsea números todavía.
 		validateRequiredText(&mapped, "SKU", sku)
+		validateSKUFormat(&mapped, sku)
 		validateRequiredText(&mapped, "NOMBRE", name)
 		validateRequiredText(&mapped, "MARCA", brand)
 		validateRequiredText(&mapped, "DESCRIPCION", description)
 		validateRequiredText(&mapped, "CATEGORIA", category)
 		validateRequiredText(&mapped, "SUB CATEGORIA", subCategory)
+		startDate, startDateOK := parseOptionalDateField(&mapped, "FECHA DE INICIO", startDateRaw)
+		endDate, endDateOK := parseOptionalDateField(&mapped, "FECHA DE FIN", endDateRaw)
+		validateDateRange(&mapped, startDateRaw, startDateOK, startDate, endDateRaw, endDateOK, endDate)
 
 		// Luego parseamos todos los campos numéricos relevantes.
 		// Cada parseo agrega su propio issue si falla.
@@ -242,6 +248,90 @@ func validateRequiredText(mapped *MappedRow, field, value string) {
 		Field:    field,
 		Message:  "Campo obligatorio faltante",
 		Detail:   "",
+	})
+}
+
+// validateSKUFormat agrega una regla explícita de caracteres permitidos
+// para evitar que lleguen SKUs incompatibles a las rutas de la API.
+func validateSKUFormat(mapped *MappedRow, sku string) {
+	if sku == "" {
+		return
+	}
+
+	invalidChar, ok := findInvalidSKUChar(sku)
+	if !ok {
+		return
+	}
+
+	mapped.Issues = append(mapped.Issues, RowIssue{
+		Severity: "ERROR",
+		Field:    "SKU",
+		Message:  "SKU inválido",
+		Detail:   fmt.Sprintf("Carácter inválido en SKU: %q", string(invalidChar)),
+	})
+}
+
+// findInvalidSKUChar devuelve el primer carácter que no cumple la whitelist
+// acordada para SKU: ASCII alfanumérico, guion o guion bajo.
+func findInvalidSKUChar(sku string) (rune, bool) {
+	for _, r := range sku {
+		if r >= 'a' && r <= 'z' {
+			continue
+		}
+		if r >= 'A' && r <= 'Z' {
+			continue
+		}
+		if r >= '0' && r <= '9' {
+			continue
+		}
+		if r == '-' || r == '_' {
+			continue
+		}
+		return r, true
+	}
+
+	return 0, false
+}
+
+// parseOptionalDateField valida fechas opcionales con formato estricto
+// `DD/MM/YYYY`. Si el valor viene vacío, no agrega error.
+func parseOptionalDateField(mapped *MappedRow, field, raw string) (time.Time, bool) {
+	if raw == "" {
+		return time.Time{}, false
+	}
+
+	value, err := time.Parse("02/01/2006", raw)
+	if err != nil {
+		mapped.Issues = append(mapped.Issues, RowIssue{
+			Severity: "ERROR",
+			Field:    field,
+			Message:  "Fecha inválida",
+			Detail:   fmt.Sprintf("Valor inválido: %q. Debe tener formato DD/MM/YYYY", raw),
+		})
+		return time.Time{}, false
+	}
+
+	return value, true
+}
+
+// validateDateRange solo se activa si ambas fechas opcionales vienen cargadas
+// y pudieron parsearse correctamente.
+func validateDateRange(mapped *MappedRow, startRaw string, startOK bool, start time.Time, endRaw string, endOK bool, end time.Time) {
+	if startRaw == "" || endRaw == "" {
+		return
+	}
+	if !startOK || !endOK {
+		return
+	}
+	if !start.After(end) {
+		return
+	}
+
+	mapped.Issues = append(mapped.Issues, RowIssue{
+		Severity: "ERROR",
+		Field:    "FECHA DE FIN",
+		Message:  "Rango de fechas inválido",
+		Detail:   fmt.Sprintf("FECHA DE INICIO (%s) no puede ser posterior a FECHA DE FIN (%s)", startRaw, endRaw),
 	})
 }
 
