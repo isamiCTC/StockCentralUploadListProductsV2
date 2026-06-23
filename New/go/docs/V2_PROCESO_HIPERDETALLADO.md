@@ -1128,24 +1128,17 @@ Se parsean como requeridos:
 
 ### Fechas opcionales
 
-`FECHA DE INICIO` y `FECHA DE FIN` son opcionales.
+`FECHA DE INICIO` y `FECHA DE FIN` siguen formando parte del layout obligatorio del archivo, pero ya no se validan por contenido.
 
-Si vienen vacías:
+Eso significa:
 
-- no generan error.
-
-Si vienen con contenido:
-
-- deben parsear con formato estricto `DD/MM/YYYY`;
-- si no cumplen, la fila queda en error;
-- el `detail` informa el valor inválido recibido.
-
-### Rango entre fechas
-
-Si ambas fechas vienen cargadas y las dos parsean bien:
-
-- `FECHA DE INICIO` no puede ser posterior a `FECHA DE FIN`;
-- si el rango es inválido, la fila queda en error con detalle explícito de ambos valores.
+- la columna debe existir en el header;
+- la celda puede venir vacía;
+- la celda puede venir con cualquier texto;
+- ese valor se conserva como dato crudo en el DTO;
+- no se parsea;
+- no genera error por formato;
+- no genera error por rango.
 
 ### Campo de imágenes
 
@@ -1438,9 +1431,9 @@ Igual que en el legacy:
 Hoy se mapean y se conservan en el DTO, pero no forman parte del payload final a la API de productos.
 
 En el caso de las fechas, antes de conservarlas:
-
-- se valida el formato `DD/MM/YYYY` si vienen cargadas;
-- y se valida que inicio no sea mayor que fin cuando ambas existen.
+- no se valida el formato;
+- no se valida el rango;
+- solo se conservan como texto crudo.
 
 O sea:
 
@@ -1782,15 +1775,30 @@ Hoy puede verse:
 - `Status = OK`
 - `ImagesResult = NO_APLICA`
 
-#### Producto OK sin URLs válidas
+#### Producto OK sin URLs de imágenes
 
 - `Status = OK`
 - `ImagesResult = NO_APLICA`
+
+Esto aplica cuando `URL IMAGENES` viene vacía o con solo espacios.
+Si la celda trae contenido no vacío pero inválido, la fila no cae acá:
+
+- queda en `ERROR`;
+- el mapper agrega el issue `URL de imagen inválida`;
+- y la fila no llega a la etapa de sincronización de imágenes.
 
 #### Producto OK con una o más imágenes fallidas
 
 - `Status = PARTIAL_OK`
 - `ImagesResult = PARCIAL`
+
+`PARCIAL` marca que el producto quedó impactado pero la parte de imágenes no terminó completamente bien.
+El valor realmente explicativo queda en `Detail`, donde hoy se informa:
+
+- qué imagen falló;
+- si falló la descarga o el sync API;
+- o si hubo timeout/cancelación durante imágenes;
+- junto con cantidades de imágenes sincronizadas y fallidas antes del corte.
 
 #### Error previo o de API de producto
 
@@ -1923,15 +1931,15 @@ Se arma según el estado:
 
 #### `PROCESSED`
 
-`Archivo procesado - {providerID} - {filename}`
+`Archivo procesado - {providerName} - {filename}`
 
 #### `PROCESSED_WITH_ERRORS`
 
-`Archivo procesado con errores - {providerID} - {filename}`
+`Archivo procesado con errores - {providerName} - {filename}`
 
 #### `STRUCTURE_ERROR`
 
-`Archivo rechazado - {providerID} - {filename}`
+`Archivo rechazado - {providerName} - {filename}`
 
 ### Cuerpo del mail
 

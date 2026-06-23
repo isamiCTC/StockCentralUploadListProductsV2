@@ -152,7 +152,7 @@ func TestMapRowsStockUpdateInvalidSKUProducesError(t *testing.T) {
 	}
 }
 
-func TestMapRowsFullImportInvalidStartDateProducesError(t *testing.T) {
+func TestMapRowsFullImportKeepsInvalidStartDateWithoutError(t *testing.T) {
 	t.Parallel()
 
 	workbook := Workbook{
@@ -197,15 +197,18 @@ func TestMapRowsFullImportInvalidStartDateProducesError(t *testing.T) {
 	if len(rows) != 1 {
 		t.Fatalf("rows count = %d, want 1", len(rows))
 	}
-	if !rows[0].HasErrors() {
-		t.Fatal("mapped row should have an error for invalid start date")
+	if rows[0].HasErrors() {
+		t.Fatalf("mapped row should not have errors for invalid start date text: %+v", rows[0].Issues)
 	}
-	if rows[0].Issues[0].Field != "FECHA DE INICIO" {
-		t.Fatalf("issue field = %q, want %q", rows[0].Issues[0].Field, "FECHA DE INICIO")
+	if rows[0].FullImport == nil {
+		t.Fatal("FullImport payload should not be nil")
+	}
+	if rows[0].FullImport.StartDateRaw != "2026-01-31" {
+		t.Fatalf("StartDateRaw = %q, want %q", rows[0].FullImport.StartDateRaw, "2026-01-31")
 	}
 }
 
-func TestMapRowsFullImportInvalidDateRangeProducesError(t *testing.T) {
+func TestMapRowsFullImportKeepsInvertedDateRangeWithoutError(t *testing.T) {
 	t.Parallel()
 
 	workbook := Workbook{
@@ -250,10 +253,16 @@ func TestMapRowsFullImportInvalidDateRangeProducesError(t *testing.T) {
 	if len(rows) != 1 {
 		t.Fatalf("rows count = %d, want 1", len(rows))
 	}
-	if !rows[0].HasErrors() {
-		t.Fatal("mapped row should have an error for invalid date range")
+	if rows[0].HasErrors() {
+		t.Fatalf("mapped row should not have errors for inverted date range: %+v", rows[0].Issues)
 	}
-	if rows[0].Issues[0].Message != "Rango de fechas inválido" {
-		t.Fatalf("issue message = %q, want %q", rows[0].Issues[0].Message, "Rango de fechas inválido")
+	if rows[0].FullImport == nil {
+		t.Fatal("FullImport payload should not be nil")
+	}
+	if rows[0].FullImport.StartDateRaw != "15/07/2026" {
+		t.Fatalf("StartDateRaw = %q, want %q", rows[0].FullImport.StartDateRaw, "15/07/2026")
+	}
+	if rows[0].FullImport.EndDateRaw != "10/07/2026" {
+		t.Fatalf("EndDateRaw = %q, want %q", rows[0].FullImport.EndDateRaw, "10/07/2026")
 	}
 }

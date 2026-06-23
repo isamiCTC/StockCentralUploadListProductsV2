@@ -43,6 +43,7 @@ func TestNotifyFileProcessedSendsExpectedAttachmentForProcessedWithErrors(t *tes
 
 	job := intake.FileJob{
 		ProviderID:    342,
+		ProviderName:  "Carrefour",
 		ProviderEmail: "provider@example.test",
 		RelativePath:  "sub/catalog.xlsx",
 	}
@@ -65,7 +66,7 @@ func TestNotifyFileProcessedSendsExpectedAttachmentForProcessedWithErrors(t *tes
 	if !reflect.DeepEqual(sender.to, wantRecipients) {
 		t.Fatalf("to = %#v, want %#v", sender.to, wantRecipients)
 	}
-	if sender.subject != "Archivo procesado con errores - 342 - catalog.xlsx" {
+	if sender.subject != "Archivo procesado con errores - Carrefour - catalog.xlsx" {
 		t.Fatalf("subject = %q", sender.subject)
 	}
 	if sender.attachmentPath != "C:/processed/342/sub/catalog.result.xlsx" {
@@ -85,6 +86,7 @@ func TestNotifyFileProcessedUsesStructureAttachmentForStructureError(t *testing.
 
 	job := intake.FileJob{
 		ProviderID:   342,
+		ProviderName: "Carrefour",
 		RelativePath: "catalog.xlsx",
 	}
 	result := reporting.FileResult{
@@ -98,6 +100,9 @@ func TestNotifyFileProcessedUsesStructureAttachmentForStructureError(t *testing.
 	}
 	if sender.attachmentPath != "C:/processed/342/catalog.structure-errors.xlsx" {
 		t.Fatalf("attachmentPath = %q", sender.attachmentPath)
+	}
+	if sender.subject != "Archivo rechazado - Carrefour - catalog.xlsx" {
+		t.Fatalf("subject = %q", sender.subject)
 	}
 }
 
@@ -113,6 +118,7 @@ func TestNotifyFileProcessedReturnsWrappedSenderError(t *testing.T) {
 
 	err := service.NotifyFileProcessed(context.Background(), intake.FileJob{
 		ProviderID:   342,
+		ProviderName: "Carrefour",
 		RelativePath: "catalog.xlsx",
 	}, reporting.FileResult{
 		Status:          reporting.FileStatusProcessed,

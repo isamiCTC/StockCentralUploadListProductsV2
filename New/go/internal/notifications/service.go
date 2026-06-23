@@ -110,19 +110,19 @@ func buildNotificationPayload(job intake.FileJob, result reporting.FileResult) (
 	// El estado final del archivo define tanto el texto como el adjunto.
 	switch result.Status {
 	case reporting.FileStatusStructureError:
-		return fmt.Sprintf("Archivo rechazado - %d - %s", job.ProviderID, filename),
+		return fmt.Sprintf("Archivo rechazado - %s - %s", job.ProviderName, filename),
 			fmt.Sprintf("El archivo adjunto no pudo procesarse por estructura invalida.\nArchivo: %s", filename),
 			result.StructureErrorsPath
 	case reporting.FileStatusProcessedErrors:
-		return fmt.Sprintf("Archivo procesado con errores - %d - %s", job.ProviderID, filename),
+		return fmt.Sprintf("Archivo procesado con errores - %s - %s", job.ProviderName, filename),
 			fmt.Sprintf("Se proceso el archivo adjunto con observaciones.\nArchivo: %s", filename),
 			result.ResultsFilePath
 	case reporting.FileStatusProcessed:
-		return fmt.Sprintf("Archivo procesado - %d - %s", job.ProviderID, filename),
+		return fmt.Sprintf("Archivo procesado - %s - %s", job.ProviderName, filename),
 			fmt.Sprintf("Se proceso el archivo adjunto.\nArchivo: %s", filename),
 			result.ResultsFilePath
 	default:
-		return fmt.Sprintf("Archivo procesado - %d - %s", job.ProviderID, filename),
+		return fmt.Sprintf("Archivo procesado - %s - %s", job.ProviderName, filename),
 			fmt.Sprintf("Se proceso el archivo adjunto.\nArchivo: %s", filename),
 			result.ResultsFilePath
 	}

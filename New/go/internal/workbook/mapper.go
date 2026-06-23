@@ -5,7 +5,6 @@ import (
 	"math"
 	"net/url"
 	"strings"
-	"time"
 )
 
 // Este archivo transforma filas crudas del workbook en DTOs tipados
@@ -137,10 +136,6 @@ func mapFullImportRows(workbook Workbook) []MappedRow {
 		validateRequiredText(&mapped, "DESCRIPCION", description)
 		validateRequiredText(&mapped, "CATEGORIA", category)
 		validateRequiredText(&mapped, "SUB CATEGORIA", subCategory)
-		startDate, startDateOK := parseOptionalDateField(&mapped, "FECHA DE INICIO", startDateRaw)
-		endDate, endDateOK := parseOptionalDateField(&mapped, "FECHA DE FIN", endDateRaw)
-		validateDateRange(&mapped, startDateRaw, startDateOK, startDate, endDateRaw, endDateOK, endDate)
-
 		// Luego parseamos todos los campos numéricos relevantes.
 		// Cada parseo agrega su propio issue si falla.
 		height, heightOK := parseRequiredFloatField(&mapped, "ALTO", getCellValue(rawRow, workbook.HeaderIndexByKey, "ALTO"))
@@ -291,48 +286,6 @@ func findInvalidSKUChar(sku string) (rune, bool) {
 	}
 
 	return 0, false
-}
-
-// parseOptionalDateField valida fechas opcionales con formato estricto
-// `DD/MM/YYYY`. Si el valor viene vacío, no agrega error.
-func parseOptionalDateField(mapped *MappedRow, field, raw string) (time.Time, bool) {
-	if raw == "" {
-		return time.Time{}, false
-	}
-
-	value, err := time.Parse("02/01/2006", raw)
-	if err != nil {
-		mapped.Issues = append(mapped.Issues, RowIssue{
-			Severity: "ERROR",
-			Field:    field,
-			Message:  "Fecha inválida",
-			Detail:   fmt.Sprintf("Valor inválido: %q. Debe tener formato DD/MM/YYYY", raw),
-		})
-		return time.Time{}, false
-	}
-
-	return value, true
-}
-
-// validateDateRange solo se activa si ambas fechas opcionales vienen cargadas
-// y pudieron parsearse correctamente.
-func validateDateRange(mapped *MappedRow, startRaw string, startOK bool, start time.Time, endRaw string, endOK bool, end time.Time) {
-	if startRaw == "" || endRaw == "" {
-		return
-	}
-	if !startOK || !endOK {
-		return
-	}
-	if !start.After(end) {
-		return
-	}
-
-	mapped.Issues = append(mapped.Issues, RowIssue{
-		Severity: "ERROR",
-		Field:    "FECHA DE FIN",
-		Message:  "Rango de fechas inválido",
-		Detail:   fmt.Sprintf("FECHA DE INICIO (%s) no puede ser posterior a FECHA DE FIN (%s)", startRaw, endRaw),
-	})
 }
 
 // parseRequiredFloatField centraliza la validación de numéricos obligatorios.
