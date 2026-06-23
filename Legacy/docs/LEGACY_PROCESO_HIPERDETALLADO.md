@@ -10,25 +10,25 @@ El objetivo no es describir todo el repositorio histórico, sino dejar documenta
 
 El proceso real está repartido entre tres proyectos:
 
-1. [`StockCentralUploadListProducts/Program.cs`](/home/nacho/Downloads/SCUploadListProducts/StockCentralUploadListProducts/Program.cs)
+1. `StockCentralUploadListProducts/Program.cs`
    Punto de entrada del Windows Service.
 
-2. [`StockCentralUploadListProducts/MainServices.cs`](/home/nacho/Downloads/SCUploadListProducts/StockCentralUploadListProducts/MainServices.cs)
+2. `StockCentralUploadListProducts/MainServices.cs`
    Orquesta la búsqueda de archivos, la carga de configuración, la obtención de providers y el disparo de la importación.
 
-3. [`StockCentralToMagento/Business/ProcessSystem.cs`](/home/nacho/Downloads/SCUploadListProducts/StockCentralToMagento/Business/ProcessSystem.cs)
+3. `StockCentralToMagento/Business/ProcessSystem.cs`
    Expone helpers para obtener archivos y delega la importación al conector.
 
-4. [`MG2Connector/Magento.cs`](/home/nacho/Downloads/SCUploadListProducts/MG2Connector/Magento.cs)
+4. `MG2Connector/Magento.cs`
    Contiene la lógica principal de lectura del Excel y las llamadas HTTP a la API de productos.
 
-5. [`StockCentralToMagento/DataAccess/ProviderDALC.cs`](/home/nacho/Downloads/SCUploadListProducts/StockCentralToMagento/DataAccess/ProviderDALC.cs)
+5. `StockCentralToMagento/DataAccess/ProviderDALC.cs`
    Obtiene desde base de datos la lista de providers habilitados para procesar.
 
-6. [`MG2Connector/LogSystem.cs`](/home/nacho/Downloads/SCUploadListProducts/MG2Connector/LogSystem.cs)
+6. `MG2Connector/LogSystem.cs`
    Maneja el logging legacy.
 
-7. [`StockCentralUploadListProducts/App.config`](/home/nacho/Downloads/SCUploadListProducts/StockCentralUploadListProducts/App.config)
+7. `StockCentralUploadListProducts/App.config`
    Contiene la configuración del servicio y de la API.
 
 ---
@@ -59,11 +59,11 @@ Eso es el corazón del proceso.
 
 ### Entry point
 
-El punto de entrada es [`StockCentralUploadListProducts/Program.cs`](/home/nacho/Downloads/SCUploadListProducts/StockCentralUploadListProducts/Program.cs), que simplemente levanta la clase `MainServices`.
+El punto de entrada es `StockCentralUploadListProducts/Program.cs`, que simplemente levanta la clase `MainServices`.
 
 ### OnStart
 
-En [`MainServices.cs`](/home/nacho/Downloads/SCUploadListProducts/StockCentralUploadListProducts/MainServices.cs), el método `OnStart` hace lo siguiente:
+En `StockCentralUploadListProducts/MainServices.cs`, el método `OnStart` hace lo siguiente:
 
 1. Crea un `Timer`.
 2. Configura la connection string global para acceso a SQL Server.
@@ -91,7 +91,7 @@ Esto es importante porque el servicio legacy no es un batch de una sola pasada. 
 
 ## Configuración relevante
 
-La configuración vive en [`App.config`](/home/nacho/Downloads/SCUploadListProducts/StockCentralUploadListProducts/App.config).
+La configuración vive en `StockCentralUploadListProducts/App.config`.
 
 ### Claves directamente relevantes para este flujo
 
@@ -197,7 +197,7 @@ Dentro de `Process`, el servicio obtiene la lista de providers desde SQL Server.
 Se llama a:
 
 - método: `ProviderDALC.GetListByEnabledAndIntegratorAndCatalogID(true, 3, SolounCatalogo)`
-- archivo: [`ProviderDALC.cs`](/home/nacho/Downloads/SCUploadListProducts/StockCentralToMagento/DataAccess/ProviderDALC.cs)
+- archivo: `StockCentralToMagento/DataAccess/ProviderDALC.cs`
 - stored procedure: `ProvidersGetListByEnabledAndIntegratorAndCatalogID`
 
 ### Parámetros enviados al SP
@@ -235,7 +235,7 @@ Ejemplo conceptual:
 
 ### Importante: no recorre recursivamente
 
-El helper [`ProcessSystem.GetFileInfoListToProcess`](/home/nacho/Downloads/SCUploadListProducts/StockCentralToMagento/Business/ProcessSystem.cs) hace:
+El helper `ProcessSystem.GetFileInfoListToProcess` en `StockCentralToMagento/Business/ProcessSystem.cs` hace:
 
 - `new DirectoryInfo(storeDirectory)`
 - `GetFiles().ToList()`
@@ -331,7 +331,7 @@ O sea:
 
 La importación de cada archivo se inicia desde:
 
-- [`ProcessSystem.ImportProductsfromExcel`](/home/nacho/Downloads/SCUploadListProducts/StockCentralToMagento/Business/ProcessSystem.cs)
+- `ProcessSystem.ImportProductsfromExcel` en `StockCentralToMagento/Business/ProcessSystem.cs`
 
 Ese método:
 
@@ -950,7 +950,7 @@ La resiliencia del legacy existe, pero es bastante artesanal:
 
 ## Logging legacy
 
-El logging vive en [`MG2Connector/LogSystem.cs`](/home/nacho/Downloads/SCUploadListProducts/MG2Connector/LogSystem.cs).
+El logging vive en `MG2Connector/LogSystem.cs`.
 
 ### Modos
 
