@@ -1,14 +1,8 @@
-[CmdletBinding()]
-param(
-    [string]$GoCachePath,
-    [string]$GoModCachePath
-)
-
 # Este script corre la suite de tests del proyecto y deja una salida
 # más clara para uso diario desde terminal.
 #
 # Responsabilidades:
-# - ejecutar `go test ./...`
+# - ejecutar `go test -count=1 ./...`
 # - mostrar la salida real mientras corre
 # - detectar si hubo fallos o errores
 # - cerrar con un resumen corto y legible
@@ -19,26 +13,8 @@ $ErrorActionPreference = "Stop"
 $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $ProjectRoot = Split-Path -Parent $ScriptDir
 
-# Definimos caches por defecto dentro del repo, pero permitimos override
-# por parámetro o variables de entorno para escenarios más flexibles.
-$CacheRoot = Join-Path $ProjectRoot ".cache"
-$DefaultGoCache = Join-Path $CacheRoot "go-build"
-$DefaultGoModCache = Join-Path $CacheRoot "go-modcache"
-
-$EffectiveGoCache = if ($GoCachePath) { $GoCachePath } elseif ($env:GOCACHE) { $env:GOCACHE } else { $DefaultGoCache }
-$EffectiveGoModCache = if ($GoModCachePath) { $GoModCachePath } elseif ($env:GOMODCACHE) { $env:GOMODCACHE } else { $DefaultGoModCache }
-
-New-Item -ItemType Directory -Path $EffectiveGoCache -Force | Out-Null
-New-Item -ItemType Directory -Path $EffectiveGoModCache -Force | Out-Null
-
-$env:GOCACHE = $EffectiveGoCache
-$env:GOMODCACHE = $EffectiveGoModCache
-
 Write-Host ""
 Write-Host "=== Tests StockCentralUploadListProductsV2 ===" -ForegroundColor Cyan
-Write-Host "Proyecto : $ProjectRoot"
-Write-Host "GOCACHE  : $EffectiveGoCache"
-Write-Host "GOMODCACHE: $EffectiveGoModCache"
 Write-Host ""
 
 $OutputLines = New-Object System.Collections.Generic.List[string]
@@ -46,7 +22,7 @@ $OutputLines = New-Object System.Collections.Generic.List[string]
 Push-Location $ProjectRoot
 try {
     # Stream de salida en vivo + captura para análisis posterior.
-    & go test ./... 2>&1 | Tee-Object -Variable TestOutput
+    & go test -count=1 ./... 2>&1 | Tee-Object -Variable TestOutput
     $ExitCode = $LASTEXITCODE
 }
 finally {
