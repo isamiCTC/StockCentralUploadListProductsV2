@@ -10,6 +10,11 @@ import (
 	"github.com/xuri/excelize/v2"
 )
 
+// Este archivo prueba la generación de los excels de salida del batch.
+//
+// La suite valida tanto la hoja de `Resultados` como la de
+// `ErroresEstructura`, incluyendo headers, filas y omisiones esperadas.
+
 func TestWriteRowResultsOmitsSkippedRowsAndWritesExpectedSheet(t *testing.T) {
 	t.Parallel()
 

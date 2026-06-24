@@ -6,6 +6,11 @@ import (
 	"testing"
 )
 
+// Este archivo prueba las reglas de rutas y movimientos del intake.
+//
+// La suite valida cómo se construyen paths derivados y cómo se trasladan
+// archivos entre input, processing y processed.
+
 func TestBuildPathsPreservesProviderAndRelativeStructure(t *testing.T) {
 	t.Parallel()
 

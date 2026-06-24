@@ -10,6 +10,13 @@ import (
 	"stockcentraluploadlistproductsv2/internal/products"
 )
 
+// Este archivo prueba la resolución de categorías y subcategorías.
+//
+// La idea es blindar el orden de decisión acordado:
+// - primero mapping hardcodeado;
+// - después fallback a API;
+// - y finalmente ramas de respaldo cuando no hay match.
+
 func TestResolveBySubcategoryMatchesHardcodedWithLooseNormalization(t *testing.T) {
 	t.Parallel()
 

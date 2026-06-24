@@ -7,6 +7,13 @@ import (
 	"testing"
 )
 
+// Este archivo prueba la carga combinada de configuración desde TOML y `.env`.
+//
+// La suite busca asegurar que el loader:
+// - una ambas fuentes correctamente;
+// - complete secretos esperados;
+// - y falle cuando falta configuración crítica.
+
 func TestLoadReadsSecretsFromEnvFile(t *testing.T) {
 	restore := clearEnvForLoad(t)
 	defer restore()

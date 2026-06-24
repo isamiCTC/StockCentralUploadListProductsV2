@@ -13,6 +13,13 @@ import (
 	"stockcentraluploadlistproductsv2/internal/reporting"
 )
 
+// Este archivo prueba la lógica funcional de notificaciones por archivo.
+//
+// La suite cubre decisiones como:
+// - cuándo no enviar;
+// - cómo resolver adjuntos y destinatarios;
+// - y qué errores se propagan desde el sender.
+
 func TestNotifyFileProcessedSkipsWhenNotificationsDisabled(t *testing.T) {
 	t.Parallel()
 

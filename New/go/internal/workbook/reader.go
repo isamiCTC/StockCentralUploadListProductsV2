@@ -23,8 +23,9 @@ import (
 // - arma filas crudas
 // - valida estructura
 
-// Reader no necesita estado por ahora, pero lo dejamos como struct porque
-// más adelante puede crecer con opciones, métricas o helpers inyectables.
+// Reader hoy no mantiene estado propio, pero se modela como struct para
+// conservar una superficie simple y permitir extensiones del lector sin
+// cambiar su punto de entrada.
 type Reader struct{}
 
 // NewReader construye el lector de Excel.
@@ -52,16 +53,16 @@ func (r *Reader) Read(path string) (Workbook, error) {
 		_ = file.Close()
 	}()
 
-	// Por ahora tomamos siempre la primera hoja. Eso simplifica la primera
-	// versión y coincide con el supuesto operativo actual del servicio.
+	// Tomamos la primera hoja porque ese es el contrato operativo actual
+	// del proceso para este tipo de archivos.
 	sheets := file.GetSheetList()
 	if len(sheets) == 0 {
 		return Workbook{}, fmt.Errorf("xlsx file does not contain sheets")
 	}
 
 	sheetName := sheets[0]
-	// Leemos toda la hoja en memoria porque todavía estamos en una etapa
-	// temprana del rediseño y necesitamos privilegiar claridad.
+	// Leemos toda la hoja en memoria para simplificar el procesamiento
+	// posterior sobre una representación homogénea del workbook.
 	rows, err := file.GetRows(sheetName)
 	if err != nil {
 		return Workbook{}, fmt.Errorf("read rows from sheet %s: %w", sheetName, err)

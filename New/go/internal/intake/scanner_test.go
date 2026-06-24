@@ -9,6 +9,11 @@ import (
 	"stockcentraluploadlistproductsv2/internal/providers"
 )
 
+// Este archivo prueba el descubrimiento de archivos elegibles en input.
+//
+// La suite valida el filtrado por provider, extensión y estructura relativa
+// para asegurar que el scanner solo entregue trabajo válido al batch.
+
 func TestDiscoverProviderFilesFiltersByProviderAndExtensionAndKeepsRelativePath(t *testing.T) {
 	t.Parallel()
 

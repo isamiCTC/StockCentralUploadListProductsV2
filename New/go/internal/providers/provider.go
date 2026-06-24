@@ -1,10 +1,14 @@
 package providers
 
-// Provider representa el mínimo dato que hoy necesitamos de un proveedor:
-// su ID, su nombre y su email operativo si el SP lo informa.
+// Este archivo define el modelo mínimo de provider que usa el batch.
 //
-// En la versión legacy la entidad tiene muchos más campos, pero en esta etapa
-// del batch solo modelamos lo que realmente usamos.
+// Su responsabilidad es expresar solo los datos que el proceso necesita para:
+// - identificar al provider;
+// - resolver sus carpetas;
+// - y notificarlo por mail si corresponde.
+//
+// El legado maneja más campos, pero este paquete conserva únicamente el
+// subconjunto que participa del flujo actual.
 type Provider struct {
 	ID    int
 	Name  string

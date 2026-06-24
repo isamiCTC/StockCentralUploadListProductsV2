@@ -17,6 +17,11 @@ import (
 	"stockcentraluploadlistproductsv2/internal/workbook"
 )
 
+// Este archivo prueba el flujo de procesamiento de un archivo individual.
+//
+// La suite cubre tanto defaults y helpers como ramas funcionales del
+// `FileProcessor`, incluyendo filas, productos, imágenes y resultados finales.
+
 func TestNewFileProcessorAppliesDefaults(t *testing.T) {
 	t.Parallel()
 

@@ -1,9 +1,13 @@
 package intake
 
-// FileJob representa un archivo detectado listo para entrar al pipeline.
+// Este archivo define la unidad de trabajo básica de la etapa de intake.
 //
-// Contiene tanto la identidad lógica del archivo como las rutas que va
-// tomando a medida que atraviesa input, processing y processed.
+// Su responsabilidad es modelar, en una sola estructura, la identidad del
+// archivo detectado y todas las rutas derivadas que el batch necesita a lo
+// largo del pipeline.
+//
+// Así evitamos repartir paths y metadatos del mismo archivo entre varias
+// estructuras parciales.
 type FileJob struct {
 	ProviderID       int
 	ProviderName     string
