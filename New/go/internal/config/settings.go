@@ -10,6 +10,7 @@ type Config struct {
 	Batch         BatchConfig       `toml:"batch"`
 	Paths         PathsConfig       `toml:"paths"`
 	Database      DatabaseConfig    `toml:"database"`
+	Catalog       CatalogConfig     `toml:"catalog"`
 	ProductsAPI   ProductsAPIConfig `toml:"products_api"`
 	Logging       LoggingConfig     `toml:"logging"`
 	Notifications NotificationsConfig
@@ -41,8 +42,15 @@ type PathsConfig struct {
 
 // DatabaseConfig contiene parámetros no sensibles para hablar con SQL Server.
 type DatabaseConfig struct {
-	TimeoutSeconds  int    `toml:"timeout_seconds"`
-	ProvidersSPName string `toml:"providers_sp_name"`
+	TimeoutSeconds         int    `toml:"timeout_seconds"`
+	ProvidersSPName        string `toml:"providers_sp_name"`
+	CategoryMappingsSPName string `toml:"category_mappings_sp_name"`
+}
+
+// CatalogConfig contiene decisiones de resolución de catálogo.
+type CatalogConfig struct {
+	FallbackCategoryCode string `toml:"fallback_category_code"`
+	FallbackCategoryName string `toml:"fallback_category_name"`
 }
 
 // ProductsAPIConfig define cómo hablar con la API de productos.

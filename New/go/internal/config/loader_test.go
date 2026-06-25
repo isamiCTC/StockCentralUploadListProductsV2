@@ -149,6 +149,11 @@ processed_root = "C:/processed"
 [database]
 timeout_seconds = 30
 providers_sp_name = "ProvidersGetListByEnabledAndIntegratorAndCatalogID"
+category_mappings_sp_name = "ProviderCategoryNameToRubroId_Get"
+
+[catalog]
+fallback_category_code = "1041"
+fallback_category_name = "Varios"
 
 [products_api]
 base_url = "http://example.test"

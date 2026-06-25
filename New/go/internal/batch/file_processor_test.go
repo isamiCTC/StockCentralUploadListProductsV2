@@ -138,10 +138,12 @@ func TestProcessFullImportRowMarksPartialWhenTimeoutExpiresDuringImages(t *testi
 	}, "token")
 
 	processor := &FileProcessor{
-		rowWorkers:      1,
-		rowTimeout:      250 * time.Millisecond,
-		syncImages:      true,
-		catalogResolver: catalog.NewResolver(client),
+		rowWorkers: 1,
+		rowTimeout: 250 * time.Millisecond,
+		syncImages: true,
+		catalogResolver: catalog.NewResolver(client, map[string]products.CategoryBranch{
+			"CELULARES": {Code: "1217", Name: "Telefonía y Accesorios"},
+		}, products.CategoryBranch{Code: "1041", Name: "Varios"}),
 		imageDownloader: images.NewDownloader(5 * time.Second),
 		productsClient:  client,
 		logs:            discardLoggerSet(),

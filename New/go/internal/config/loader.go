@@ -19,6 +19,7 @@ type fileConfig struct {
 	Batch         BatchConfig       `toml:"batch"`
 	Paths         PathsConfig       `toml:"paths"`
 	Database      DatabaseConfig    `toml:"database"`
+	Catalog       CatalogConfig     `toml:"catalog"`
 	ProductsAPI   ProductsAPIConfig `toml:"products_api"`
 	Logging       LoggingConfig     `toml:"logging"`
 	Notifications NotificationsConfig
@@ -58,6 +59,7 @@ func Load(settingsPath, envPath string) (Config, error) {
 		Batch:         fc.Batch,
 		Paths:         fc.Paths,
 		Database:      fc.Database,
+		Catalog:       fc.Catalog,
 		ProductsAPI:   fc.ProductsAPI,
 		Logging:       fc.Logging,
 		Notifications: fc.Notifications,
@@ -97,6 +99,12 @@ func validate(cfg Config) error {
 	}
 	if cfg.Database.ProvidersSPName == "" {
 		return fmt.Errorf("missing database.providers_sp_name")
+	}
+	if cfg.Catalog.FallbackCategoryCode == "" {
+		return fmt.Errorf("missing catalog.fallback_category_code")
+	}
+	if cfg.Catalog.FallbackCategoryName == "" {
+		return fmt.Errorf("missing catalog.fallback_category_name")
 	}
 	if cfg.ProductsAPI.BaseURL == "" {
 		return fmt.Errorf("missing products_api.base_url")

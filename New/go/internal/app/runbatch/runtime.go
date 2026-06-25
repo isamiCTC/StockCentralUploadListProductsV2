@@ -1,6 +1,7 @@
 package runbatch
 
 import (
+	"context"
 	"fmt"
 	"time"
 
@@ -60,10 +61,19 @@ func BuildBatch(cfg appconfig.Config, logs logging.LoggerSet) (BatchRuntime, err
 	// - escribir resultados;
 	// - y notificar.
 	providerRepo := providers.NewSQLServerRepository(sqlServer, cfg.Database)
+	categoryMappingRepo := catalog.NewSQLServerMappingRepository(sqlServer, cfg.Database)
+	categoryMappings, err := categoryMappingRepo.LoadGlobalMappings(context.Background())
+	if err != nil {
+		_ = sqlServer.Close()
+		return BatchRuntime{}, fmt.Errorf("load category mappings: %w", err)
+	}
 	scanner := intake.NewScanner(cfg.Paths.InputRoot)
 	excelReader := workbook.NewReader()
 	productsClient := products.NewClient(cfg.ProductsAPI, cfg.Secrets.ProductsAPIToken)
-	categoryResolver := catalog.NewResolver(productsClient)
+	categoryResolver := catalog.NewResolver(productsClient, categoryMappings, products.CategoryBranch{
+		Code: cfg.Catalog.FallbackCategoryCode,
+		Name: cfg.Catalog.FallbackCategoryName,
+	})
 	imageDownloader := images.NewDownloader(60 * time.Second)
 	mover := intake.NewMover(cfg.Paths.ProcessingRoot, cfg.Paths.ProcessedRoot)
 	sendGridClient := notifications.NewSendGridClient(cfg.Secrets.SendGridAPIKey)
@@ -130,7 +140,12 @@ func LogBatchBootstrap(logs logging.LoggerSet, cfg appconfig.Config) {
 	)
 	logs.Summary.Info("database-ready",
 		logging.String("providers_sp_name", cfg.Database.ProvidersSPName),
+		logging.String("category_mappings_sp_name", cfg.Database.CategoryMappingsSPName),
 		logging.Int("timeout_seconds", cfg.Database.TimeoutSeconds),
+	)
+	logs.Summary.Info("catalog-ready",
+		logging.String("fallback_category_code", cfg.Catalog.FallbackCategoryCode),
+		logging.String("fallback_category_name", cfg.Catalog.FallbackCategoryName),
 	)
 	logs.Summary.Info("products-api-ready",
 		logging.String("base_url", cfg.ProductsAPI.BaseURL),
