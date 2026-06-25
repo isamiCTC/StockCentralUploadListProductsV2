@@ -2,6 +2,7 @@ package batch
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"slices"
 	"strings"
@@ -101,6 +102,8 @@ func (p *FileProcessor) Process(ctx context.Context, job intake.FileJob) (report
 	)
 
 	// Detail deja la ruta concreta para depuración más fina.
+	p.logs.Detail.Blank()
+	p.logs.Detail.Info("--------------------------------------------------- FILE START ---------------------------------------------------")
 	p.logs.Detail.Info("file-processing-started",
 		logging.Int("provider_id", job.ProviderID),
 		logging.String("file", job.InputPath),
@@ -262,6 +265,8 @@ func (p *FileProcessor) Process(ctx context.Context, job intake.FileJob) (report
 		logging.String("processed_path", result.ProcessedPath),
 		logging.String("results_path", result.ResultsFilePath),
 	)
+	p.logs.Detail.Info("---------------------------------------------------- FILE END ----------------------------------------------------")
+	p.logs.Detail.Blank()
 
 	// Paso 11. Intentar notificación al final.
 	// Si el mail falla, lo registramos, pero no "deshacemos" el trabajo del archivo.
@@ -336,6 +341,8 @@ func (p *FileProcessor) finishWithStructureErrors(ctx context.Context, startedAt
 		logging.String("status", string(result.Status)),
 		logging.String("structure_errors_path", result.StructureErrorsPath),
 	)
+	p.logs.Detail.Info("---------------------------------------------------- FILE END ----------------------------------------------------")
+	p.logs.Detail.Blank()
 
 	p.notifyFileProcessed(ctx, job, result)
 
@@ -683,9 +690,26 @@ func (p *FileProcessor) processFullImportRow(ctx context.Context, providerID int
 		Depth:            row.FullImport.Depth,
 		WeightKilograms:  row.FullImport.WeightKilograms,
 	}
+	rowLogs.Debug("product-payload-ready",
+		logging.Int("provider_id", providerID),
+		logging.Int("excel_row", row.ExcelRowNumber),
+		logging.String("sku", row.SKU),
+		logging.Int("stock", row.FullImport.Stock),
+		logging.String("price", fmt.Sprintf("%.2f", row.FullImport.Price)),
+		logging.String("list_price", fmt.Sprintf("%.2f", row.FullImport.ListPrice)),
+		logging.String("net_price", fmt.Sprintf("%.2f", row.FullImport.NetPrice)),
+		logging.String("taxes", fmt.Sprintf("%.2f", row.FullImport.Taxes)),
+		logging.Int("images_count", len(row.FullImport.ImageURLs)),
+	)
 
 	// Convertimos la fila al modelo que espera la API de productos.
 	product := p.productsClient.BuildProductFromInput(providerID, input, resolution.Branch)
+	rowLogs.Debug("product-request",
+		logging.Int("provider_id", providerID),
+		logging.Int("excel_row", row.ExcelRowNumber),
+		logging.String("sku", row.SKU),
+		logging.String("json", marshalLogJSON(product)),
+	)
 	upsertResult, err := p.productsClient.UpsertProductLegacy(ctx, providerID, product)
 	if err != nil {
 		result.Status = reporting.RowStatusError
@@ -705,6 +729,13 @@ func (p *FileProcessor) processFullImportRow(ctx context.Context, providerID int
 		logging.Int("excel_row", row.ExcelRowNumber),
 		logging.String("sku", row.SKU),
 		logging.String("action", upsertResult.Action),
+	)
+	rowLogs.Debug("product-upsert-http",
+		logging.Int("provider_id", providerID),
+		logging.Int("excel_row", row.ExcelRowNumber),
+		logging.String("sku", row.SKU),
+		logging.String("update_meta", describeMeta(upsertResult.UpdateMeta)),
+		logging.String("create_meta", describeMeta(upsertResult.CreateMeta)),
 	)
 
 	// Si la sincronización global de imágenes está apagada, la fila termina acá.
@@ -795,6 +826,13 @@ func (p *FileProcessor) syncRowImages(ctx context.Context, providerID int, row w
 		}
 
 		// Paso 2: enviar esa imagen a la API del producto.
+		rowLogs.Debug("image-request",
+			logging.Int("provider_id", providerID),
+			logging.Int("excel_row", row.ExcelRowNumber),
+			logging.String("sku", row.SKU),
+			logging.Int("image_index", index),
+			logging.String("request", describeImageRequest(base64Image)),
+		)
 		syncResult, err := p.productsClient.SyncImageLegacy(ctx, providerID, row.SKU, index, base64Image)
 		if err != nil {
 			if ctx.Err() != nil {
@@ -824,6 +862,15 @@ func (p *FileProcessor) syncRowImages(ctx context.Context, providerID int, row w
 			logging.String("sku", row.SKU),
 			logging.Int("image_index", index),
 			logging.String("action", syncResult.Action),
+		)
+		rowLogs.Debug("image-sync-http",
+			logging.Int("provider_id", providerID),
+			logging.Int("excel_row", row.ExcelRowNumber),
+			logging.String("sku", row.SKU),
+			logging.Int("image_index", index),
+			logging.String("get_meta", describeMeta(syncResult.GetMeta)),
+			logging.String("update_meta", describeMeta(syncResult.UpdateMeta)),
+			logging.String("create_meta", describeMeta(syncResult.CreateMeta)),
 		)
 	}
 
@@ -899,4 +946,23 @@ func classifyRowTimeoutWhileImages(ctx context.Context, imagesSynced, imagesFail
 	parts = append(parts, fmt.Sprintf("Imagenes fallidas antes del corte: %d", imagesFailed))
 	parts = append(parts, details...)
 	return message, strings.Join(parts, " | ")
+}
+
+func marshalLogJSON(value any) string {
+	data, err := json.Marshal(value)
+	if err != nil {
+		return fmt.Sprintf("marshal-error:%v", err)
+	}
+	return string(data)
+}
+
+func describeImageRequest(base64Image string) string {
+	const previewLength = 48
+
+	preview := base64Image
+	if len(preview) > previewLength {
+		preview = preview[:previewLength] + "..."
+	}
+
+	return fmt.Sprintf("base64_len=%d preview=%q", len(base64Image), preview)
 }

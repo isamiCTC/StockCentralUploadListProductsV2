@@ -73,7 +73,11 @@ func (c *Client) UpsertProductLegacy(ctx context.Context, providerID int, produc
 			return UpsertResult{}, createErr
 		}
 		if !isSuccessfulStatus(createMeta.StatusCode) {
-			return UpsertResult{}, fmt.Errorf("create product %s failed with status %d", product.Sku, createMeta.StatusCode)
+			return UpsertResult{}, formatHTTPFailure(
+				fmt.Sprintf("create product %s", product.Sku),
+				createMeta.StatusCode,
+				createMeta.Body,
+			)
 		}
 
 		return UpsertResult{
@@ -85,7 +89,11 @@ func (c *Client) UpsertProductLegacy(ctx context.Context, providerID int, produc
 
 	// Si no hubo fallback y el update no fue exitoso, devolvemos error.
 	if !isSuccessfulStatus(updateMeta.StatusCode) {
-		return UpsertResult{}, fmt.Errorf("update product %s failed with status %d", product.Sku, updateMeta.StatusCode)
+		return UpsertResult{}, formatHTTPFailure(
+			fmt.Sprintf("update product %s", product.Sku),
+			updateMeta.StatusCode,
+			updateMeta.Body,
+		)
 	}
 
 	// Si llegamos acá, el producto ya existía y quedó actualizado.
@@ -112,7 +120,11 @@ func (c *Client) SyncStockLegacy(ctx context.Context, providerID int, sku string
 
 	// La sincronización se considera exitosa solo con status HTTP 2xx.
 	if !isSuccessfulStatus(updateMeta.StatusCode) {
-		return nil, fmt.Errorf("sync stock for sku %s failed with status %d", sku, updateMeta.StatusCode)
+		return nil, formatHTTPFailure(
+			fmt.Sprintf("sync stock for sku %s", sku),
+			updateMeta.StatusCode,
+			updateMeta.Body,
+		)
 	}
 
 	return updateMeta, nil

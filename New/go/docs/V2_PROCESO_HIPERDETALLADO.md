@@ -392,12 +392,16 @@ Hay dos salidas oficiales:
 
 - escribe a consola;
 - escribe a archivo rotativo;
-- está pensado para el seguimiento resumido del batch y del archivo.
+- está pensado para el seguimiento resumido del batch y del archivo;
+- si `console_level` permite `DEBUG`, también puede mostrar eventos debug
+  explícitos del summary, como la configuración efectiva mínima de arranque.
 
 ### `detail`
 
 - escribe solo a archivo;
-- está pensado para el seguimiento técnico y fila por fila.
+- está pensado para el seguimiento técnico y fila por fila;
+- hoy además deja separadores visuales entre batchs, archivos y bloques por
+  SKU para que la lectura operativa sea más clara.
 
 ### Formato
 
@@ -429,6 +433,8 @@ Además, hoy el `detail` por fila usa un buffer temporal por SKU:
 - cada worker acumula en memoria las líneas de su fila;
 - cuando la fila termina, escribe el bloque completo de una sola vez;
 - eso evita que se intercalen eventos de SKUs distintos dentro del `detail`.
+- el bloque hoy además queda rodeado por líneas en blanco para separar mejor
+  visualmente una fila de la siguiente.
 
 ### Rotación y retención
 
@@ -444,6 +450,7 @@ Se aplica con `lumberjack`, según config:
 Ejemplos:
 
 - arranque del batch;
+- configuración efectiva mínima de arranque cuando el summary está en `DEBUG`;
 - paths;
 - settings principales;
 - cantidad de providers;
@@ -457,6 +464,8 @@ Ejemplos:
 
 Ejemplos:
 
+- separadores de inicio y fin de batch;
+- separadores de inicio y fin de archivo;
 - inicio técnico del procesamiento de archivo;
 - move a `processing`;
 - validación del Excel;
@@ -465,8 +474,12 @@ Ejemplos:
 - inicio de transacción por SKU;
 - validaciones;
 - resolución de subcategoría;
+- request JSON de producto cuando el detail está en `DEBUG`;
 - upsert de producto;
+- metadatos HTTP de producto cuando el detail está en `DEBUG`;
 - inicio, error o éxito de imágenes;
+- request resumido de imagen cuando el detail está en `DEBUG`;
+- metadatos HTTP de imagen cuando el detail está en `DEBUG`;
 - errores de API;
 - errores de mail.
 
@@ -487,7 +500,9 @@ Ese bloque:
 - reúne toda la traza de una fila completa;
 - se escribe junto al final de esa fila;
 - no se mezcla con eventos de otros SKUs aunque haya concurrencia;
-- deja mucho más simple seguir la historia completa de una transacción.
+- deja mucho más simple seguir la historia completa de una transacción;
+- queda visualmente separado del bloque siguiente con una línea en blanco antes
+  y otra después.
 
 ---
 
@@ -1485,7 +1500,7 @@ Si no hay match hardcodeado:
 
 - llama `ResolveFirstSubcategory`;
 - usa el valor original de `SUB CATEGORIA`, no la versión normalizada;
-- que a su vez hace `GET /Mp_ProductsAPI_CTC/subcategories/{providerID}/{texto}`;
+- que a su vez hace `GET {base_url}/subcategories/{providerID}/{texto}`;
 - si la API devuelve al menos un item, toma el primero.
 
 ### Fallback final
@@ -1531,11 +1546,20 @@ Cada request agrega:
 
 ### Rutas construidas
 
-- `/Mp_ProductsAPI_CTC/providers/{providerID}/products`
-- `/Mp_ProductsAPI_CTC/providers/{providerID}/products/{sku}/`
-- `/Mp_ProductsAPI_CTC/providers/{providerID}/products/{sku}/images/{index}`
-- `/Mp_ProductsAPI_CTC/providers/{providerID}/products/{sku}/images`
-- `/Mp_ProductsAPI_CTC/subcategories/{providerID}/{subcategoryName}`
+La V2 hoy construye rutas relativas bajo el `products_api.base_url`
+configurado:
+
+- `/providers/{providerID}/products`
+- `/providers/{providerID}/products/{sku}/`
+- `/providers/{providerID}/products/{sku}/images/{index}`
+- `/providers/{providerID}/products/{sku}/images`
+- `/subcategories/{providerID}/{subcategoryName}`
+
+Eso permite que `base_url` incluya el prefijo completo de la API. Por ejemplo:
+
+- si `base_url = https://ctcoffice.com.ar:27443/Mp_ProductsAPI_CTC`
+- la URL efectiva de producto queda `https://ctcoffice.com.ar:27443/Mp_ProductsAPI_CTC/providers/{providerID}/products`
+- y la URL efectiva de subcategorías queda `https://ctcoffice.com.ar:27443/Mp_ProductsAPI_CTC/subcategories/{providerID}/{subcategoryName}`
 
 ---
 
@@ -1623,6 +1647,11 @@ Si el `PUT` no da éxito y tampoco es el caso puntual de “Producto inexistente
 
 Si el `POST` falla o devuelve status no 2xx, se devuelve error.
 
+Hoy esos errores también conservan:
+
+- el status HTTP;
+- y un body truncado a un tamaño razonable para diagnóstico.
+
 ---
 
 ## Sincronización de stock
@@ -1653,10 +1682,11 @@ La descarga está en `images/downloader.go`.
 1. arma request HTTP GET con contexto;
 2. descarga bytes;
 3. si la respuesta no es 2xx, falla;
-4. intenta `image.Decode`;
-5. si decodea bien:
+4. si detecta WebP por `Content-Type` o por firma binaria `RIFF....WEBP`, la convierte siempre a JPEG;
+5. si no es WebP, intenta `image.Decode`;
+6. si decodea bien:
    - devuelve Base64 de los bytes originales;
-6. si no decodea como imagen estándar:
+7. si no decodea como imagen estándar:
    - intenta `webp.Decode`, del paquete `golang.org/x/image/webp`, que agrega soporte para imágenes WebP en Go;
    - reencodea a JPEG;
    - devuelve Base64 del JPEG.
@@ -1674,6 +1704,11 @@ La intención funcional es la misma:
 
 - tolerar imágenes estándar;
 - y convertir WebP cuando haga falta.
+
+Hoy la regla es incluso más estricta que en la primera versión de V2:
+
+- si la imagen es WebP, se convierte a JPEG aunque Go logre decodificarla sin error;
+- eso evita enviar Base64 crudo de WebP a APIs que internamente esperan formatos compatibles con `System.Drawing`.
 
 ---
 
@@ -1696,7 +1731,7 @@ La lógica vive en `products/images.go`.
 
 Hace:
 
-`GET /Mp_ProductsAPI_CTC/providers/{providerID}/products/{sku}/images/{index}`
+`GET {base_url}/providers/{providerID}/products/{sku}/images/{index}`
 
 #### Comparación
 
@@ -1798,7 +1833,8 @@ El valor realmente explicativo queda en `Detail`, donde hoy se informa:
 - qué imagen falló;
 - si falló la descarga o el sync API;
 - o si hubo timeout/cancelación durante imágenes;
-- junto con cantidades de imágenes sincronizadas y fallidas antes del corte.
+- junto con cantidades de imágenes sincronizadas y fallidas antes del corte;
+- y, en errores HTTP, status y body truncado para diagnóstico.
 
 #### Error previo o de API de producto
 

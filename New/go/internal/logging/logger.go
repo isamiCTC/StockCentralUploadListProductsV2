@@ -85,6 +85,17 @@ func (l *Logger) Error(msg string, fields ...Field) {
 	l.log(LevelError, msg, fields...)
 }
 
+// Blank deja una línea vacía explícita en el destino de log.
+func (l *Logger) Blank() {
+	if l == nil || l.writer == nil {
+		return
+	}
+
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	_, _ = io.WriteString(l.writer, "\n")
+}
+
 // log aplica el filtro de nivel, formatea la línea y la escribe protegida
 // por mutex para no mezclar salidas concurrentes.
 func (l *Logger) log(level Level, msg string, fields ...Field) {
@@ -117,9 +128,11 @@ func (b *Buffer) Flush() {
 	}
 
 	var block strings.Builder
+	block.WriteString("\n")
 	for _, line := range b.lines {
 		block.WriteString(line)
 	}
+	block.WriteString("\n")
 
 	b.logger.mu.Lock()
 	defer b.logger.mu.Unlock()

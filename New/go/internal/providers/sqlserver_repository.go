@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"time"
 
 	appconfig "stockcentraluploadlistproductsv2/internal/config"
 )
@@ -37,8 +38,11 @@ func NewSQLServerRepository(server *SQLServer, cfg appconfig.DatabaseConfig) *SQ
 func (r *SQLServerRepository) ListEnabledByIntegratorAndCatalog(ctx context.Context, integratorID, catalogID int) ([]Provider, error) {
 	// Ejecutamos el SP de forma explícita para dejar visible qué parámetros
 	// salen desde la aplicación.
+	queryCtx, cancel := context.WithTimeout(ctx, time.Duration(r.server.timeoutSeconds)*time.Second)
+	defer cancel()
+
 	rows, err := r.server.QueryContext(
-		ctx,
+		queryCtx,
 		fmt.Sprintf("EXEC %s @Enabled = @p1, @IntegratorID = @p2, @CatalogID = @p3", r.providersSPName),
 		true,
 		integratorID,

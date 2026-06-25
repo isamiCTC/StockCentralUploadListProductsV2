@@ -20,7 +20,7 @@ timeout_seconds = 30
 providers_sp_name = "ProvidersGetListByEnabledAndIntegratorAndCatalogID"
 
 [products_api]
-base_url = "http://stockcentral.ctcils.com.ar:26202"
+base_url = "http://stockcentral.ctcils.com.ar:26202/Mp_ProductsAPI_CTC"
 provider_name = "CTC"
 timeout_seconds = 60
 

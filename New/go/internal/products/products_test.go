@@ -3,6 +3,7 @@ package products
 import (
 	"context"
 	"net/http"
+	"strings"
 	"testing"
 
 	appconfig "stockcentraluploadlistproductsv2/internal/config"
@@ -65,5 +66,31 @@ func TestUpsertProductLegacyFailsWhenCreateReturnsNon2xx(t *testing.T) {
 
 	if _, err := client.UpsertProductLegacy(context.Background(), 342, Product{Sku: "ABC123"}); err == nil {
 		t.Fatal("UpsertProductLegacy should fail when create returns non-2xx")
+	} else if !strings.Contains(err.Error(), `body="{\"error\":\"boom\"}"`) {
+		t.Fatalf("error = %q, want response body included", err.Error())
+	}
+}
+
+func TestUpsertProductLegacyFailsWhenUpdateReturnsNon2xxAndIncludesBody(t *testing.T) {
+	t.Parallel()
+
+	client := NewClient(appconfig.ProductsAPIConfig{
+		BaseURL:        "http://example.test",
+		ProviderName:   "CTC",
+		TimeoutSeconds: 5,
+	}, "token")
+	client.http.SetTransport(roundTripFunc(func(r *http.Request) (*http.Response, error) {
+		switch r.Method {
+		case http.MethodPut:
+			return jsonResponse(http.StatusBadRequest, `{"Message":"validation failed"}`, r), nil
+		default:
+			return jsonResponse(http.StatusMethodNotAllowed, `{}`, r), nil
+		}
+	}))
+
+	if _, err := client.UpsertProductLegacy(context.Background(), 342, Product{Sku: "ABC123"}); err == nil {
+		t.Fatal("UpsertProductLegacy should fail when update returns non-2xx")
+	} else if !strings.Contains(err.Error(), `body="{\"Message\":\"validation failed\"}"`) {
+		t.Fatalf("error = %q, want response body included", err.Error())
 	}
 }

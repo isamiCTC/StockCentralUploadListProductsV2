@@ -56,12 +56,13 @@ func (s *SQLServer) Close() error {
 // QueryContext ejecuta una query usando el timeout configurado en TOML.
 // Esto evita dejar operaciones de DB colgadas indefinidamente.
 func (s *SQLServer) QueryContext(ctx context.Context, query string, args ...any) (*sql.Rows, error) {
-	// Cada query hereda el contexto padre, pero además suma el timeout propio
-	// configurado para base.
-	queryCtx, cancel := context.WithTimeout(ctx, time.Duration(s.timeoutSeconds)*time.Second)
-	defer cancel()
-
-	rows, err := s.db.QueryContext(queryCtx, query, args...)
+	// No cancelamos acá un timeout derivado porque `*sql.Rows` puede seguir
+	// consumiéndose después de que esta función retorna. Si se cancelara en este
+	// punto, la iteración de `rows.Next()` fallaría con `context canceled`.
+	//
+	// El caller que recorra las filas debe ser quien acote y cierre el ciclo de
+	// vida del contexto.
+	rows, err := s.db.QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, fmt.Errorf("query sqlserver: %w", err)
 	}

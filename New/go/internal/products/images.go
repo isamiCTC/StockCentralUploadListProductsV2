@@ -85,7 +85,11 @@ func (c *Client) SyncImageLegacy(ctx context.Context, providerID int, sku string
 			return ImageSyncResult{}, createErr
 		}
 		if !isSuccessfulStatus(createMeta.StatusCode) {
-			return ImageSyncResult{}, fmt.Errorf("create image for sku %s failed with status %d", sku, createMeta.StatusCode)
+			return ImageSyncResult{}, formatHTTPFailure(
+				fmt.Sprintf("create image for sku %s", sku),
+				createMeta.StatusCode,
+				createMeta.Body,
+			)
 		}
 
 		return ImageSyncResult{
@@ -99,7 +103,11 @@ func (c *Client) SyncImageLegacy(ctx context.Context, providerID int, sku string
 
 	// Si no hubo fallback y PUT tampoco fue exitoso, la sincronización falla.
 	if !isSuccessfulStatus(updateMeta.StatusCode) {
-		return ImageSyncResult{}, fmt.Errorf("update image %d for sku %s failed with status %d", index, sku, updateMeta.StatusCode)
+		return ImageSyncResult{}, formatHTTPFailure(
+			fmt.Sprintf("update image %d for sku %s", index, sku),
+			updateMeta.StatusCode,
+			updateMeta.Body,
+		)
 	}
 
 	// Si llegamos acá, la imagen terminó actualizada por PUT.

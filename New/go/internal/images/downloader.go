@@ -9,6 +9,7 @@ import (
 	"image/jpeg"
 	"io"
 	"net/http"
+	"strings"
 	"time"
 
 	_ "image/gif"
@@ -61,12 +62,22 @@ func (d *Downloader) DownloadAsBase64(ctx context.Context, imageURL string) (str
 		return "", fmt.Errorf("read image body %q: %w", imageURL, err)
 	}
 
+	// WebP debe convertirse siempre a JPEG para respetar el contrato práctico
+	// de la API legacy, que intenta abrir el base64 con System.Drawing.
+	if isWebPImage(data, response.Header.Get("Content-Type")) {
+		return encodeWebPAsJPEGBase64(data, imageURL)
+	}
+
 	// Primer intento: si Go puede decodificarla como imagen estándar,
 	// devolvemos exactamente esos bytes.
 	if _, _, err := image.Decode(bytes.NewReader(data)); err == nil {
 		return base64.StdEncoding.EncodeToString(data), nil
 	}
 
+	return encodeWebPAsJPEGBase64(data, imageURL)
+}
+
+func encodeWebPAsJPEGBase64(data []byte, imageURL string) (string, error) {
 	// Segundo intento: si no se pudo decodificar arriba, probamos tratarla
 	// como WebP y convertirla a JPEG.
 	webpImage, err := webp.Decode(bytes.NewReader(data))
@@ -81,4 +92,15 @@ func (d *Downloader) DownloadAsBase64(ctx context.Context, imageURL string) (str
 	}
 
 	return base64.StdEncoding.EncodeToString(encoded.Bytes()), nil
+}
+
+func isWebPImage(data []byte, contentType string) bool {
+	if strings.Contains(strings.ToLower(strings.TrimSpace(contentType)), "image/webp") {
+		return true
+	}
+
+	// Firma RIFF....WEBP.
+	return len(data) >= 12 &&
+		string(data[0:4]) == "RIFF" &&
+		string(data[8:12]) == "WEBP"
 }

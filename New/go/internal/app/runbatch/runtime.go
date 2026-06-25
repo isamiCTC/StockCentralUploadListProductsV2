@@ -100,6 +100,27 @@ func BuildBatch(cfg appconfig.Config, logs logging.LoggerSet) (BatchRuntime, err
 // LogBatchBootstrap deja registrado el contexto principal de la corrida.
 func LogBatchBootstrap(logs logging.LoggerSet, cfg appconfig.Config) {
 	// Estos logs ayudan a reconstruir con qué configuración arrancó la corrida.
+	logs.Detail.Blank()
+	logs.Detail.Info("================================================== BATCH START ==================================================")
+	logs.Detail.Debug("batch-context",
+		logging.String("app", cfg.App.Name),
+		logging.String("environment", cfg.App.Environment),
+		logging.String("input_root", cfg.Paths.InputRoot),
+		logging.String("processing_root", cfg.Paths.ProcessingRoot),
+		logging.String("processed_root", cfg.Paths.ProcessedRoot),
+		logging.String("products_api_base_url", cfg.ProductsAPI.BaseURL),
+	)
+	logs.Summary.Debug("effective-config",
+		logging.String("environment", cfg.App.Environment),
+		logging.String("products_api_base_url", cfg.ProductsAPI.BaseURL),
+		logging.Int("catalog_id", cfg.Batch.CatalogID),
+		logging.Int("provider_integrator_id", cfg.Batch.ProviderIntegratorID),
+		logging.Int("row_workers", cfg.Batch.RowWorkers),
+		logging.Int("row_timeout_seconds", cfg.Batch.RowTimeoutSeconds),
+		logging.String("sync_images", fmt.Sprintf("%t", cfg.Batch.SyncImages)),
+		logging.String("input_root", cfg.Paths.InputRoot),
+	)
+
 	logs.Summary.Info("batch-bootstrap", logging.String("app", cfg.App.Name))
 	logs.Summary.Info("config-loaded", logging.String("environment", cfg.App.Environment))
 	logs.Summary.Info("paths-ready",
@@ -137,4 +158,6 @@ func LogBatchFinished(logs logging.LoggerSet, result reporting.BatchResult) {
 		logging.String("finished_at", result.FinishedAt.Format("2006-01-02 15:04:05")),
 		logging.String("duration", fmt.Sprintf("%s", result.FinishedAt.Sub(result.StartedAt))),
 	)
+	logs.Detail.Info("=================================================== BATCH END ===================================================")
+	logs.Detail.Blank()
 }

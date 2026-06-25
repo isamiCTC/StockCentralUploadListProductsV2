@@ -1,6 +1,11 @@
 package products
 
-import "github.com/go-resty/resty/v2"
+import (
+	"fmt"
+	"strings"
+
+	"github.com/go-resty/resty/v2"
+)
 
 // Este archivo guarda metadatos mínimos de respuesta HTTP útiles para logging.
 //
@@ -26,6 +31,22 @@ func newRestyMeta(response *resty.Response) *restyMeta {
 		StatusCode: response.StatusCode(),
 		Body:       append([]byte(nil), response.Body()...),
 	}
+}
+
+func formatHTTPFailure(action string, statusCode int, body []byte) error {
+	bodyText := strings.TrimSpace(string(body))
+	if bodyText == "" {
+		return fmt.Errorf("%s failed with status %d", action, statusCode)
+	}
+
+	// Dejamos el body visible para diagnóstico, pero acotado para no inflar
+	// demasiado los logs cuando una API devuelve HTML o payloads grandes.
+	const maxBodyLength = 500
+	if len(bodyText) > maxBodyLength {
+		bodyText = bodyText[:maxBodyLength] + "..."
+	}
+
+	return fmt.Errorf("%s failed with status %d body=%q", action, statusCode, bodyText)
 }
 
 func isSuccessfulStatus(statusCode int) bool {

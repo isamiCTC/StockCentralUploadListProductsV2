@@ -53,25 +53,25 @@ func (c *Client) newRequest(ctx context.Context) *resty.Request {
 
 // providerProductsPath devuelve la ruta base de productos para un provider.
 func (c *Client) providerProductsPath(providerID int) string {
-	return fmt.Sprintf("/Mp_ProductsAPI_CTC/providers/%d/products", providerID)
+	return fmt.Sprintf("/providers/%d/products", providerID)
 }
 
 // providerProductPath devuelve la ruta de un SKU particular.
 func (c *Client) providerProductPath(providerID int, sku string) string {
-	return fmt.Sprintf("/Mp_ProductsAPI_CTC/providers/%d/products/%s/", providerID, sku)
+	return fmt.Sprintf("/providers/%d/products/%s/", providerID, sku)
 }
 
 // providerProductImagePath devuelve la ruta de una imagen puntual por índice.
 func (c *Client) providerProductImagePath(providerID int, sku string, index int) string {
-	return fmt.Sprintf("/Mp_ProductsAPI_CTC/providers/%d/products/%s/images/%d", providerID, sku, index)
+	return fmt.Sprintf("/providers/%d/products/%s/images/%d", providerID, sku, index)
 }
 
 // providerProductImagesPath devuelve la ruta de creación de imágenes.
 func (c *Client) providerProductImagesPath(providerID int, sku string) string {
-	return fmt.Sprintf("/Mp_ProductsAPI_CTC/providers/%d/products/%s/images", providerID, sku)
+	return fmt.Sprintf("/providers/%d/products/%s/images", providerID, sku)
 }
 
 // subcategoriesPath devuelve la ruta de búsqueda de subcategoría por texto.
 func (c *Client) subcategoriesPath(providerID int, subcategoryName string) string {
-	return fmt.Sprintf("/Mp_ProductsAPI_CTC/subcategories/%d/%s", providerID, subcategoryName)
+	return fmt.Sprintf("/subcategories/%d/%s", providerID, subcategoryName)
 }
