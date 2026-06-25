@@ -20,7 +20,7 @@ La V2 cambia varias decisiones estructurales del sistema anterior:
 4. procesa archivos de a uno;
 5. procesa filas concurrentemente dentro de cada archivo;
 6. genera un Excel de resultado por archivo;
-7. envía un mail corto con el adjunto de resultados;
+7. envía un mail corto con el Excel final y además el archivo procesado;
 8. centraliza mejor logging, paths, configuración y separación de responsabilidades.
 
 En términos funcionales, el objetivo sigue siendo el mismo:
@@ -117,11 +117,11 @@ El flujo principal de V2 se reparte entre estos archivos:
 22. `internal/catalog/resolver.go`
     Resolución de categoría a partir de subcategoría.
 
-23. `internal/catalog/hardcoded_map.go`
-    Mapa hardcodeado heredado del legacy.
+23. `internal/catalog/sqlserver_mapping_repository.go`
+    Carga desde SQL Server el mapping `ProviderCategoryName -> RubroId`.
 
 24. `internal/catalog/normalize.go`
-    Normalización laxa usada para comparar subcategorías contra el hardcode.
+    Normalización laxa usada para comparar subcategorías contra el mapping cargado desde DB.
 
 ### Imágenes, resultados, mails y logs
 
@@ -158,26 +158,27 @@ Hoy la V2 hace esto:
 4. si se ejecuta `run`, carga TOML y `.env`;
 5. inicializa logging;
 6. arma el runtime del batch desde `internal/app/runbatch/runtime.go`;
-7. ejecuta el SP de providers habilitados;
-8. descubre archivos `.xlsx` únicamente dentro de carpetas válidas de providers;
-9. arma un `FileJob` por archivo;
-10. procesa cada archivo de manera secuencial;
-11. mueve el archivo a `processing`;
-12. lee la primera hoja del Excel;
-13. detecta el formato por cantidad de columnas;
-14. valida estructura con matching laxo de headers;
-15. si la estructura falla, genera `ErroresEstructura`, mueve a `processed` y notifica;
-16. si la estructura es válida, mapea filas;
-17. lanza un worker pool fijo por fila;
-18. trata cada fila como una transacción lógica completa;
-19. para archivos de 2 columnas, sincroniza stock;
-20. para archivos de 19 columnas, resuelve categoría, arma payload, hace upsert y opcionalmente sincroniza imágenes;
-21. junta todos los resultados;
-22. los ordena por número de fila;
-23. mueve el original a `processed`;
-24. escribe un Excel `Resultados`;
-25. manda mail con el adjunto correspondiente;
-26. devuelve un resumen global del batch.
+7. carga desde SQL Server el mapping global de categorías;
+8. ejecuta el SP de providers habilitados;
+9. descubre archivos `.xlsx` únicamente dentro de carpetas válidas de providers;
+10. arma un `FileJob` por archivo;
+11. procesa cada archivo de manera secuencial;
+12. mueve el archivo a `processing`;
+13. lee la primera hoja del Excel;
+14. detecta el formato por cantidad de columnas;
+15. valida estructura con matching laxo de headers;
+16. si la estructura falla, genera `ErroresEstructura`, mueve a `processed` y notifica;
+17. si la estructura es válida, mapea filas;
+18. lanza un worker pool fijo por fila;
+19. trata cada fila como una transacción lógica completa;
+20. para archivos de 2 columnas, sincroniza stock;
+21. para archivos de 19 columnas, resuelve categoría, arma payload, hace upsert y opcionalmente sincroniza imágenes;
+22. junta todos los resultados;
+23. los ordena por número de fila;
+24. mueve el original a `processed`;
+25. escribe un Excel `Resultados`;
+26. manda mail con el Excel correspondiente y además el archivo procesado;
+27. devuelve un resumen global del batch.
 
 ---
 
@@ -252,14 +253,15 @@ Cuando se elige `run`, la secuencia es:
 3. inicializa logging;
 4. llama a `runbatch.BuildBatch(cfg, logs)`;
 5. dentro de ese runtime se abre SQL Server;
-6. se construyen repositorio de providers, scanner, reader de Excel, client de productos, resolver de categorías, downloader de imágenes, mover, servicio de notificaciones y writer de resultados;
-7. se construye `FileProcessor`;
-8. se construye `Processor`;
-9. la capa `runbatch` registra la configuración operativa con `runbatch.LogBatchBootstrap`;
-10. ejecuta `runtime.Processor.Run(ctx)`;
-11. si falla, termina con exit code `1`;
-12. si sale bien, registra el resumen final con `runbatch.LogBatchFinished`;
-13. al salir, intenta cerrar los recursos abiertos por el runtime.
+6. se cargan desde SQL Server los mappings globales de categoría usando `ProviderCategoryNameToRubroId_Get @ProviderId = 0`;
+7. se construyen repositorio de providers, scanner, reader de Excel, client de productos, resolver de categorías, downloader de imágenes, mover, servicio de notificaciones y writer de resultados;
+8. se construye `FileProcessor`;
+9. se construye `Processor`;
+10. la capa `runbatch` registra la configuración operativa con `runbatch.LogBatchBootstrap`;
+11. ejecuta `runtime.Processor.Run(ctx)`;
+12. si falla, registra cierre explícito de batch abortado y termina con exit code `1`;
+13. si sale bien, registra el resumen final con `runbatch.LogBatchFinished`;
+14. al salir, intenta cerrar los recursos abiertos por el runtime.
 
 ### Subcomando `self-check`
 
@@ -320,6 +322,8 @@ Valida, entre otras cosas:
 - `paths.processed_root`
 - `database.timeout_seconds`
 - `database.providers_sp_name`
+- `catalog.fallback_category_code`
+- `catalog.fallback_category_name`
 - `products_api.base_url`
 - `DB_CONNECTION_STRING`
 - `PRODUCTS_API_TOKEN`
@@ -364,6 +368,9 @@ Según el TOML actual:
 - `stop_on_file_error = false`
 - `row_workers = 5`
 - `row_timeout_seconds = 120`
+- `category_mappings_sp_name = ProviderCategoryNameToRubroId_Get`
+- `fallback_category_code = 1041`
+- `fallback_category_name = Varios`
 
 ### Observación importante
 
@@ -393,6 +400,7 @@ Hay dos salidas oficiales:
 - escribe a consola;
 - escribe a archivo rotativo;
 - está pensado para el seguimiento resumido del batch y del archivo;
+- hoy también deja separadores visuales de inicio y fin de corrida;
 - si `console_level` permite `DEBUG`, también puede mostrar eventos debug
   explícitos del summary, como la configuración efectiva mínima de arranque.
 
@@ -450,14 +458,23 @@ Se aplica con `lumberjack`, según config:
 Ejemplos:
 
 - arranque del batch;
+- separadores explícitos `BATCH START` y `BATCH END`;
 - configuración efectiva mínima de arranque cuando el summary está en `DEBUG`;
 - paths;
 - settings principales;
+- configuración de catálogo y nombres de SP relevantes;
 - cantidad de providers;
 - cantidad de archivos;
 - inicio y fin de archivo;
 - estado final del archivo;
 - envío de notificaciones;
+- `WARN` y `ERROR` operativos importantes, como:
+  - `file-structure-error`
+  - `excel-structure-error`
+  - `notification-skipped`
+  - `notification-failed`
+  - `file-failed`
+  - `sqlserver-close-failed`
 - resultado global del batch.
 
 ### Qué se loguea en `detail`
@@ -476,10 +493,10 @@ Ejemplos:
 - resolución de subcategoría;
 - request JSON de producto cuando el detail está en `DEBUG`;
 - upsert de producto;
-- metadatos HTTP de producto cuando el detail está en `DEBUG`;
+- response HTTP de producto cuando el detail está en `DEBUG`, con `status` y body acotado;
 - inicio, error o éxito de imágenes;
 - request resumido de imagen cuando el detail está en `DEBUG`;
-- metadatos HTTP de imagen cuando el detail está en `DEBUG`;
+- response HTTP de imagen cuando el detail está en `DEBUG`, con `status` y body acotado;
 - errores de API;
 - errores de mail.
 
@@ -1465,19 +1482,29 @@ Esto vive en `catalog/resolver.go`.
 
 ### Orden de resolución
 
-1. hardcode;
+1. mapping precargado desde SQL Server;
 2. API de subcategorías;
-3. fallback `Varios / 1041`.
+3. fallback configurado en TOML.
 
-### Hardcode
+### Mapping desde SQL Server
 
-Está en `hardcoded_map.go`.
+La carga vive en `sqlserver_mapping_repository.go`.
 
-Conserva el conocimiento heredado del `switch` del legacy.
+El runtime ejecuta:
+
+- `ProviderCategoryNameToRubroId_Get`
+- con `@ProviderId = 0`
+
+Y construye una cache en memoria:
+
+- clave normalizada: `ProviderCategoryName`
+- valor final: `products.CategoryBranch{Code: rubroId, Name: ProviderCategoryName}`
+
+Esa cache se construye una sola vez al arrancar el batch y luego se reutiliza fila por fila.
 
 ### Diferencia menor respecto del legacy
 
-La comparación contra el hardcode usa una normalización propia de `catalog/normalize.go`.
+La comparación contra el mapping cargado desde DB usa una normalización propia de `catalog/normalize.go`.
 
 Esa normalización aplica:
 
@@ -1486,7 +1513,7 @@ Esa normalización aplica:
 - remoción de tildes
 - colapso de espacios internos
 
-Eso permite que el match hardcodeado tolere variaciones de carga como:
+Eso permite que el match del mapping tolere variaciones de carga como:
 
 - `CLIMATIZACIÓN`
 - `climatizacion`
@@ -1494,9 +1521,11 @@ Eso permite que el match hardcodeado tolere variaciones de carga como:
 
 sin alterar el valor original que vino del Excel.
 
+La idea es conservar la flexibilidad práctica del legacy, pero sin dejar el conocimiento embebido en código.
+
 ### Fallback a API
 
-Si no hay match hardcodeado:
+Si no hay match en la cache de DB:
 
 - llama `ResolveFirstSubcategory`;
 - usa el valor original de `SUB CATEGORIA`, no la versión normalizada;
@@ -1507,13 +1536,15 @@ Si no hay match hardcodeado:
 
 Si tampoco resuelve por API:
 
-- usa `{ Code: "1041", Name: "Varios" }`.
+- usa la rama configurada en:
+  - `catalog.fallback_category_code`
+  - `catalog.fallback_category_name`
 
 ### Diferencia importante respecto del legacy
 
-En el legacy, un error en la consulta de API de subcategorías quedaba más mezclado con logging y luego terminaba en `Varios`.
+En el legacy, un error en la consulta de API de subcategorías quedaba más mezclado con logging y luego terminaba en una categoría comodín.
 
-En V2, el resolvedor también cae a `Varios` si la API no resuelve, manteniendo el espíritu práctico del proceso histórico.
+En V2, el resolvedor también cae al fallback configurado si la API no resuelve, manteniendo el espíritu práctico del proceso histórico pero evitando dejar ese dato hardcodeado.
 
 ---
 
@@ -1989,12 +2020,14 @@ Ejemplos:
 - `Se proceso el archivo adjunto con observaciones.`
 - `El archivo adjunto no pudo procesarse por estructura invalida.`
 
-### Adjunto
+### Adjuntos
 
-Se adjunta:
+Hoy se adjuntan hasta dos archivos:
 
-- `ResultsFilePath` para `PROCESSED` y `PROCESSED_WITH_ERRORS`
-- `StructureErrorsPath` para `STRUCTURE_ERROR`
+1. el Excel de salida funcional:
+   - `ResultsFilePath` para `PROCESSED` y `PROCESSED_WITH_ERRORS`
+   - `StructureErrorsPath` para `STRUCTURE_ERROR`
+2. el archivo original ya movido a `processed`, es decir `ProcessedPath`
 
 ### Envío concreto
 
@@ -2002,13 +2035,14 @@ Lo hace `sendgrid.go`, que encapsula el uso de SendGrid, el proveedor externo de
 
 Pasos:
 
-1. lee el archivo adjunto;
-2. lo base64-encodea;
-3. arma mail V3 de SendGrid;
-4. agrega todos los destinatarios;
-5. adjunta el `.xlsx`;
-6. manda request HTTP;
-7. falla si SendGrid responde no-2xx.
+1. resuelve la lista completa de adjuntos;
+2. lee cada archivo adjunto;
+3. lo base64-encodea;
+4. arma mail V3 de SendGrid;
+5. agrega todos los destinatarios;
+6. adjunta todos los archivos resueltos;
+7. manda request HTTP;
+8. falla si SendGrid responde no-2xx.
 
 ---
 
@@ -2050,27 +2084,31 @@ Y se elimina el formato muerto de 5 columnas.
 
 No desde `CATEGORIA`.
 
-### 7. Hardcode de subcategorías
+### 7. Mapping de subcategorías precargado desde DB
 
-Se mantiene, pero externalizado en mapa.
+Se mantiene la lógica de resolución temprana, pero ya no con un mapa embebido en el código.
 
 ### 8. Fallback a endpoint de subcategorías
 
 También se conserva.
 
-### 9. Peso
+### 9. Fallback final de categoría por configuración
+
+La categoría comodín sigue existiendo, pero ahora sale de config en lugar de quedar hardcodeada.
+
+### 10. Peso
 
 Se toma del Excel en gramos y se envía en kilogramos.
 
-### 10. IVA
+### 11. IVA
 
 Si viene entre `0` y `1`, se transforma a porcentaje.
 
-### 11. Oferta
+### 12. Oferta
 
 Si `OFERTA > 0`, pisa `Price` y conserva `ListPrice`.
 
-### 12. Imágenes
+### 13. Imágenes
 
 - split por `&`
 - comparación Base64
@@ -2127,7 +2165,7 @@ Excel, DB, API, mail, logs, results y batch están bastante mejor desacoplados.
 
 ### 10. Soporte explícito de notificaciones
 
-La V2 cierra cada archivo con una notificación formal y un adjunto entendible.
+La V2 cierra cada archivo con una notificación formal y adjuntos entendibles.
 
 ---
 
@@ -2155,7 +2193,7 @@ Salvo que `stop_on_file_error` se configure en `true`.
 
 ### 6. Notifica por mail al final del archivo
 
-Con adjunto entendible.
+Con Excel de salida y archivo procesado.
 
 ### 7. No procesa filas vacías como error
 
@@ -2175,64 +2213,73 @@ Esta es la secuencia end-to-end real de la V2 hoy:
 6. valida configuración mínima;
 7. levanta `summary` y `detail`;
 8. abre SQL Server y hace ping;
-9. crea repositorio de providers;
-10. ejecuta el SP de providers habilitados;
-11. ordena providers por ID;
-12. escanea `input_root`;
-13. conserva solo carpetas numéricas cuyo ID exista en el resultset del SP;
-14. dentro de cada provider válido, recorre recursivamente en busca de `.xlsx`;
-15. arma un `FileJob` por archivo;
-16. procesa cada archivo de a uno;
-17. calcula rutas derivadas;
-18. mueve el archivo a `processing`;
-19. abre el `.xlsx` con `excelize`, una librería de Go orientada a archivos Excel;
-20. toma la primera hoja;
-21. detecta formato por cantidad de columnas;
-22. valida estructura con matching laxo;
-23. si la estructura falla:
-24. mueve el original a `processed`;
-25. genera `ErroresEstructura`;
-26. manda mail con ese adjunto;
-27. sigue al siguiente archivo;
-28. si la estructura es válida:
-29. mapea filas a DTOs;
-30. clasifica filas vacías, válidas o con issues;
-31. lanza el worker pool;
-32. cada worker toma una fila;
-33. abre un buffer temporal para el `detail` de ese SKU;
-34. si la fila es vacía -> `SKIPPED`;
-35. si la fila tiene issues -> `ERROR`;
-36. si es stock update:
-37. hace `GET` del producto;
-38. pisa stock;
-39. hace `PUT`;
-40. si es full import:
-41. resuelve categoría desde subcategoría;
-42. arma payload API;
-43. intenta `PUT`;
-44. si la API dice `Producto inexistente`, hace `POST`;
-45. si imágenes globales están desactivadas, termina la fila como `OK`;
-46. si la fila no trajo URLs válidas, termina la fila como `OK`;
-47. si trajo URLs válidas:
-48. descarga cada imagen;
-49. si hace falta, convierte WebP a JPEG;
-50. compara contra imagen existente;
-51. si es igual, no la resube;
-52. si no, intenta `PUT`;
-53. si la API dice `Imagen inexistente`, hace `POST`;
-54. si alguna imagen falla, la fila queda `PARTIAL_OK`;
-55. si todas salen bien, queda `OK`;
-56. escribe el bloque completo del SKU en el `detail`;
-57. se colectan todos los `RowResult`;
-58. se ordenan por fila de Excel;
-59. se mueve el original a `processed`;
-60. se genera `Resultados`;
-61. se calcula estado final del archivo;
-62. se manda mail con el adjunto correcto;
-63. se acumula el `FileResult`;
-64. termina el batch;
-65. se loguea el resumen global;
-66. el proceso sale.
+9. carga desde SQL Server el mapping global de categorías con `ProviderCategoryNameToRubroId_Get @ProviderId = 0`;
+10. crea repositorio de providers;
+11. ejecuta el SP de providers habilitados;
+12. ordena providers por ID;
+13. escanea `input_root`;
+14. conserva solo carpetas numéricas cuyo ID exista en el resultset del SP;
+15. dentro de cada provider válido, recorre recursivamente en busca de `.xlsx`;
+16. arma un `FileJob` por archivo;
+17. procesa cada archivo de a uno;
+18. calcula rutas derivadas;
+19. mueve el archivo a `processing`;
+20. abre el `.xlsx` con `excelize`, una librería de Go orientada a archivos Excel;
+21. toma la primera hoja;
+22. detecta formato por cantidad de columnas;
+23. valida estructura con matching laxo;
+24. si la estructura falla:
+25. mueve el original a `processed`;
+26. genera `ErroresEstructura`;
+27. manda mail con ese Excel y además el archivo procesado;
+28. sigue al siguiente archivo;
+29. si la estructura es válida:
+30. mapea filas a DTOs;
+31. clasifica filas vacías, válidas o con issues;
+32. lanza el worker pool;
+33. cada worker toma una fila;
+34. abre un buffer temporal para el `detail` de ese SKU;
+35. si la fila es vacía -> `SKIPPED`;
+36. si la fila tiene issues -> `ERROR`;
+37. si es stock update:
+38. hace `GET` del producto;
+39. pisa stock;
+40. hace `PUT`;
+41. si es full import:
+42. resuelve categoría desde subcategoría;
+43. primero intenta la cache cargada desde DB;
+44. si no matchea, consulta la API de subcategorías;
+45. si tampoco resuelve, usa el fallback configurado;
+46. arma payload API;
+47. loguea `product-request` en debug;
+48. intenta `PUT`;
+49. si la API dice `Producto inexistente`, hace `POST`;
+50. loguea `product-response` en debug;
+51. si imágenes globales están desactivadas, termina la fila como `OK`;
+52. si la fila no trajo URLs válidas, termina la fila como `OK`;
+53. si trajo URLs válidas:
+54. descarga cada imagen;
+55. si hace falta, convierte WebP a JPEG;
+56. compara contra imagen existente;
+57. si es igual, no la resube;
+58. loguea `image-request` en debug;
+59. si no, intenta `PUT`;
+60. si la API dice `Imagen inexistente`, hace `POST`;
+61. loguea `image-response` en debug;
+62. si alguna imagen falla, la fila queda `PARTIAL_OK`;
+63. si todas salen bien, queda `OK`;
+64. escribe el bloque completo del SKU en el `detail`;
+65. se colectan todos los `RowResult`;
+66. se ordenan por fila de Excel;
+67. se mueve el original a `processed`;
+68. se genera `Resultados`;
+69. se calcula estado final del archivo;
+70. se manda mail con el Excel correcto y además el archivo procesado;
+71. se acumula el `FileResult`;
+72. termina el batch;
+73. se loguea el resumen global con separadores de inicio y fin de corrida;
+74. si el batch falla después de arrancar, también deja cierre explícito en logs;
+75. el proceso sale.
 
 ---
 

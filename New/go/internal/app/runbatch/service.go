@@ -36,6 +36,7 @@ func Execute(ctx context.Context, settingsPath, envPath string) int {
 	// Paso 4. Asegurar liberación de recursos, aunque el batch falle.
 	defer func() {
 		if closeErr := runtime.Close(); closeErr != nil {
+			logs.Summary.Warn("sqlserver-close-failed", logging.String("error", closeErr.Error()))
 			logs.Detail.Warn("sqlserver-close-failed", logging.String("error", closeErr.Error()))
 		}
 	}()
@@ -46,8 +47,7 @@ func Execute(ctx context.Context, settingsPath, envPath string) int {
 	// Paso 6. Ejecutar el proceso principal.
 	result, err := runtime.Processor.Run(ctx)
 	if err != nil {
-		logs.Summary.Error("batch-failed", logging.String("error", err.Error()))
-		logs.Detail.Error("batch-failed", logging.String("error", err.Error()))
+		LogBatchAborted(logs, err)
 		return 1
 	}
 

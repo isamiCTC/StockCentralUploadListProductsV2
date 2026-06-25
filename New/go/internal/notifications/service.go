@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"path/filepath"
+	"strings"
 
 	appconfig "stockcentraluploadlistproductsv2/internal/config"
 	"stockcentraluploadlistproductsv2/internal/intake"
@@ -17,12 +18,12 @@ import (
 // Responsabilidades:
 // - decidir si corresponde enviar mail
 // - resolver destinatarios finales
-// - elegir asunto, cuerpo y adjunto
+// - elegir asunto, cuerpo y adjuntos
 // - delegar el envío real al cliente de SendGrid
 
 // MailSender define el contrato mínimo que necesita el servicio.
 type MailSender interface {
-	SendMail(ctx context.Context, fromEmail string, to []string, subject, body, attachmentPath string) error
+	SendMail(ctx context.Context, fromEmail string, to []string, subject, body string, attachmentPaths []string) error
 }
 
 // Service coordina el envío de mails al terminar cada archivo.
@@ -65,6 +66,11 @@ func (s *Service) NotifyFileProcessed(ctx context.Context, job intake.FileJob, r
 	})
 	// Si no hay nadie a quien avisar, no se considera error técnico.
 	if len(recipients) == 0 {
+		s.logs.Summary.Warn("notification-skipped",
+			logging.Int("provider_id", job.ProviderID),
+			logging.String("file", job.RelativePath),
+			logging.String("reason", "no recipients resolved"),
+		)
 		s.logs.Detail.Warn("notification-skipped",
 			logging.Int("provider_id", job.ProviderID),
 			logging.String("reason", "no recipients resolved"),
@@ -72,11 +78,16 @@ func (s *Service) NotifyFileProcessed(ctx context.Context, job intake.FileJob, r
 		return nil
 	}
 
-	// El payload resume el resultado del archivo y decide qué adjunto enviar.
-	subject, body, attachmentPath := buildNotificationPayload(job, result)
-	// Si no hay adjunto disponible, preferimos omitir el envío antes que mandar
+	// El payload resume el resultado del archivo y decide qué adjuntos enviar.
+	subject, body, attachmentPaths := buildNotificationPayload(job, result)
+	// Si no hay adjuntos disponibles, preferimos omitir el envío antes que mandar
 	// un mail incompleto.
-	if attachmentPath == "" {
+	if len(attachmentPaths) == 0 {
+		s.logs.Summary.Warn("notification-skipped",
+			logging.Int("provider_id", job.ProviderID),
+			logging.String("file", job.RelativePath),
+			logging.String("reason", "no attachment path available"),
+		)
 		s.logs.Detail.Warn("notification-skipped",
 			logging.Int("provider_id", job.ProviderID),
 			logging.String("reason", "no attachment path available"),
@@ -85,7 +96,7 @@ func (s *Service) NotifyFileProcessed(ctx context.Context, job intake.FileJob, r
 	}
 
 	// El envío real queda delegado al adaptador concreto de mail.
-	if err := s.sender.SendMail(ctx, s.cfg.FromEmail, recipients, subject, body, attachmentPath); err != nil {
+	if err := s.sender.SendMail(ctx, s.cfg.FromEmail, recipients, subject, body, attachmentPaths); err != nil {
 		return fmt.Errorf("send notification for provider %d file %s: %w", job.ProviderID, job.RelativePath, err)
 	}
 
@@ -97,14 +108,14 @@ func (s *Service) NotifyFileProcessed(ctx context.Context, job intake.FileJob, r
 	s.logs.Detail.Info("notification-sent",
 		logging.Int("provider_id", job.ProviderID),
 		logging.String("file", job.RelativePath),
-		logging.String("attachment", attachmentPath),
+		logging.String("attachments", strings.Join(attachmentPaths, "; ")),
 	)
 
 	return nil
 }
 
-// buildNotificationPayload define el asunto, cuerpo y adjunto según el estado.
-func buildNotificationPayload(job intake.FileJob, result reporting.FileResult) (subject, body, attachmentPath string) {
+// buildNotificationPayload define el asunto, cuerpo y adjuntos según el estado.
+func buildNotificationPayload(job intake.FileJob, result reporting.FileResult) (subject, body string, attachmentPaths []string) {
 	filename := filepath.Base(job.RelativePath)
 
 	// El estado final del archivo define tanto el texto como el adjunto.
@@ -112,18 +123,31 @@ func buildNotificationPayload(job intake.FileJob, result reporting.FileResult) (
 	case reporting.FileStatusStructureError:
 		return fmt.Sprintf("Archivo rechazado - %s - %s", job.ProviderName, filename),
 			fmt.Sprintf("El archivo adjunto no pudo procesarse por estructura invalida.\nArchivo: %s", filename),
-			result.StructureErrorsPath
+			collectNotificationAttachments(result.StructureErrorsPath, result.ProcessedPath)
 	case reporting.FileStatusProcessedErrors:
 		return fmt.Sprintf("Archivo procesado con errores - %s - %s", job.ProviderName, filename),
 			fmt.Sprintf("Se proceso el archivo adjunto con observaciones.\nArchivo: %s", filename),
-			result.ResultsFilePath
+			collectNotificationAttachments(result.ResultsFilePath, result.ProcessedPath)
 	case reporting.FileStatusProcessed:
 		return fmt.Sprintf("Archivo procesado - %s - %s", job.ProviderName, filename),
 			fmt.Sprintf("Se proceso el archivo adjunto.\nArchivo: %s", filename),
-			result.ResultsFilePath
+			collectNotificationAttachments(result.ResultsFilePath, result.ProcessedPath)
 	default:
 		return fmt.Sprintf("Archivo procesado - %s - %s", job.ProviderName, filename),
 			fmt.Sprintf("Se proceso el archivo adjunto.\nArchivo: %s", filename),
-			result.ResultsFilePath
+			collectNotificationAttachments(result.ResultsFilePath, result.ProcessedPath)
 	}
+}
+
+func collectNotificationAttachments(paths ...string) []string {
+	attachments := make([]string, 0, len(paths))
+	for _, path := range paths {
+		path = strings.TrimSpace(path)
+		if path == "" {
+			continue
+		}
+		attachments = append(attachments, path)
+	}
+
+	return attachments
 }

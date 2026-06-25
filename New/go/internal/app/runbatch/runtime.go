@@ -110,6 +110,8 @@ func BuildBatch(cfg appconfig.Config, logs logging.LoggerSet) (BatchRuntime, err
 // LogBatchBootstrap deja registrado el contexto principal de la corrida.
 func LogBatchBootstrap(logs logging.LoggerSet, cfg appconfig.Config) {
 	// Estos logs ayudan a reconstruir con qué configuración arrancó la corrida.
+	logs.Summary.Blank()
+	logs.Summary.Info("================================================= BATCH START =================================================")
 	logs.Detail.Blank()
 	logs.Detail.Info("================================================== BATCH START ==================================================")
 	logs.Detail.Debug("batch-context",
@@ -168,11 +170,23 @@ func LogBatchFinished(logs logging.LoggerSet, result reporting.BatchResult) {
 		logging.Int("files_processed", result.FilesProcessed),
 		logging.Int("files_failed", result.FilesFailed),
 	)
+	logs.Summary.Info("================================================== BATCH END ==================================================")
+	logs.Summary.Blank()
 	logs.Detail.Info("batch-finished",
 		logging.String("started_at", result.StartedAt.Format("2006-01-02 15:04:05")),
 		logging.String("finished_at", result.FinishedAt.Format("2006-01-02 15:04:05")),
 		logging.String("duration", fmt.Sprintf("%s", result.FinishedAt.Sub(result.StartedAt))),
 	)
+	logs.Detail.Info("=================================================== BATCH END ===================================================")
+	logs.Detail.Blank()
+}
+
+// LogBatchAborted marca el cierre de una corrida que arrancó pero no terminó bien.
+func LogBatchAborted(logs logging.LoggerSet, err error) {
+	logs.Summary.Error("batch-failed", logging.String("error", err.Error()))
+	logs.Summary.Info("================================================== BATCH END ==================================================")
+	logs.Summary.Blank()
+	logs.Detail.Error("batch-failed", logging.String("error", err.Error()))
 	logs.Detail.Info("=================================================== BATCH END ===================================================")
 	logs.Detail.Blank()
 }

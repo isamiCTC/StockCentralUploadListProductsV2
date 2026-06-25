@@ -57,6 +57,7 @@ func TestNotifyFileProcessedSendsExpectedAttachmentForProcessedWithErrors(t *tes
 	result := reporting.FileResult{
 		Status:          reporting.FileStatusProcessedErrors,
 		ResultsFilePath: "C:/processed/342/sub/catalog.result.xlsx",
+		ProcessedPath:   "C:/processed/342/sub/catalog.xlsx",
 	}
 
 	err := service.NotifyFileProcessed(context.Background(), job, result)
@@ -76,8 +77,9 @@ func TestNotifyFileProcessedSendsExpectedAttachmentForProcessedWithErrors(t *tes
 	if sender.subject != "Archivo procesado con errores - Carrefour - catalog.xlsx" {
 		t.Fatalf("subject = %q", sender.subject)
 	}
-	if sender.attachmentPath != "C:/processed/342/sub/catalog.result.xlsx" {
-		t.Fatalf("attachmentPath = %q", sender.attachmentPath)
+	wantAttachments := []string{"C:/processed/342/sub/catalog.result.xlsx", "C:/processed/342/sub/catalog.xlsx"}
+	if !reflect.DeepEqual(sender.attachmentPaths, wantAttachments) {
+		t.Fatalf("attachmentPaths = %#v, want %#v", sender.attachmentPaths, wantAttachments)
 	}
 }
 
@@ -99,14 +101,16 @@ func TestNotifyFileProcessedUsesStructureAttachmentForStructureError(t *testing.
 	result := reporting.FileResult{
 		Status:              reporting.FileStatusStructureError,
 		StructureErrorsPath: "C:/processed/342/catalog.structure-errors.xlsx",
+		ProcessedPath:       "C:/processed/342/catalog.xlsx",
 	}
 
 	err := service.NotifyFileProcessed(context.Background(), job, result)
 	if err != nil {
 		t.Fatalf("NotifyFileProcessed returned error: %v", err)
 	}
-	if sender.attachmentPath != "C:/processed/342/catalog.structure-errors.xlsx" {
-		t.Fatalf("attachmentPath = %q", sender.attachmentPath)
+	wantAttachments := []string{"C:/processed/342/catalog.structure-errors.xlsx", "C:/processed/342/catalog.xlsx"}
+	if !reflect.DeepEqual(sender.attachmentPaths, wantAttachments) {
+		t.Fatalf("attachmentPaths = %#v, want %#v", sender.attachmentPaths, wantAttachments)
 	}
 	if sender.subject != "Archivo rechazado - Carrefour - catalog.xlsx" {
 		t.Fatalf("subject = %q", sender.subject)
@@ -130,6 +134,7 @@ func TestNotifyFileProcessedReturnsWrappedSenderError(t *testing.T) {
 	}, reporting.FileResult{
 		Status:          reporting.FileStatusProcessed,
 		ResultsFilePath: "C:/processed/342/catalog.result.xlsx",
+		ProcessedPath:   "C:/processed/342/catalog.xlsx",
 	})
 	if err == nil {
 		t.Fatal("NotifyFileProcessed should return error when sender fails")
@@ -137,22 +142,22 @@ func TestNotifyFileProcessedReturnsWrappedSenderError(t *testing.T) {
 }
 
 type stubMailSender struct {
-	calls          int
-	fromEmail      string
-	to             []string
-	subject        string
-	body           string
-	attachmentPath string
-	err            error
+	calls           int
+	fromEmail       string
+	to              []string
+	subject         string
+	body            string
+	attachmentPaths []string
+	err             error
 }
 
-func (s *stubMailSender) SendMail(_ context.Context, fromEmail string, to []string, subject, body, attachmentPath string) error {
+func (s *stubMailSender) SendMail(_ context.Context, fromEmail string, to []string, subject, body string, attachmentPaths []string) error {
 	s.calls++
 	s.fromEmail = fromEmail
 	s.to = append([]string(nil), to...)
 	s.subject = subject
 	s.body = body
-	s.attachmentPath = attachmentPath
+	s.attachmentPaths = append([]string(nil), attachmentPaths...)
 	return s.err
 }
 

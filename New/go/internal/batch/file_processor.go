@@ -283,6 +283,11 @@ func (p *FileProcessor) finishWithStructureErrors(ctx context.Context, startedAt
 
 	// Registramos uno por uno los problemas estructurales encontrados.
 	for _, structureError := range workbookData.StructureErrors {
+		p.logs.Summary.Warn("excel-structure-error",
+			logging.Int("provider_id", job.ProviderID),
+			logging.String("field", structureError.Field),
+			logging.String("message", structureError.Message),
+		)
 		p.logs.Detail.Error("excel-structure-error",
 			logging.Int("provider_id", job.ProviderID),
 			logging.String("field", structureError.Field),
@@ -730,12 +735,12 @@ func (p *FileProcessor) processFullImportRow(ctx context.Context, providerID int
 		logging.String("sku", row.SKU),
 		logging.String("action", upsertResult.Action),
 	)
-	rowLogs.Debug("product-upsert-http",
+	rowLogs.Debug("product-response",
 		logging.Int("provider_id", providerID),
 		logging.Int("excel_row", row.ExcelRowNumber),
 		logging.String("sku", row.SKU),
-		logging.String("update_meta", describeMeta(upsertResult.UpdateMeta)),
-		logging.String("create_meta", describeMeta(upsertResult.CreateMeta)),
+		logging.String("update_response", describeHTTPResponse(upsertResult.UpdateMeta)),
+		logging.String("create_response", describeHTTPResponse(upsertResult.CreateMeta)),
 	)
 
 	// Si la sincronización global de imágenes está apagada, la fila termina acá.
@@ -863,14 +868,14 @@ func (p *FileProcessor) syncRowImages(ctx context.Context, providerID int, row w
 			logging.Int("image_index", index),
 			logging.String("action", syncResult.Action),
 		)
-		rowLogs.Debug("image-sync-http",
+		rowLogs.Debug("image-response",
 			logging.Int("provider_id", providerID),
 			logging.Int("excel_row", row.ExcelRowNumber),
 			logging.String("sku", row.SKU),
 			logging.Int("image_index", index),
-			logging.String("get_meta", describeMeta(syncResult.GetMeta)),
-			logging.String("update_meta", describeMeta(syncResult.UpdateMeta)),
-			logging.String("create_meta", describeMeta(syncResult.CreateMeta)),
+			logging.String("get_response", describeHTTPResponse(syncResult.GetMeta)),
+			logging.String("update_response", describeHTTPResponse(syncResult.UpdateMeta)),
+			logging.String("create_response", describeHTTPResponse(syncResult.CreateMeta)),
 		)
 	}
 
@@ -918,6 +923,28 @@ func describeMeta(meta interface{ GetStatusCode() int }) string {
 		return ""
 	}
 	return fmt.Sprintf("status=%d", meta.GetStatusCode())
+}
+
+// describeHTTPResponse deja visible el status y una porción acotada del body.
+func describeHTTPResponse(meta interface {
+	GetStatusCode() int
+	GetBody() []byte
+}) string {
+	if meta == nil {
+		return ""
+	}
+
+	bodyText := strings.TrimSpace(string(meta.GetBody()))
+	if bodyText == "" {
+		return fmt.Sprintf("status=%d", meta.GetStatusCode())
+	}
+
+	const maxBodyLength = 500
+	if len(bodyText) > maxBodyLength {
+		bodyText = bodyText[:maxBodyLength] + "..."
+	}
+
+	return fmt.Sprintf("status=%d body=%q", meta.GetStatusCode(), bodyText)
 }
 
 // classifyRowError traduce un error técnico a un mensaje de fila más claro,

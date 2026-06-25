@@ -26,6 +26,15 @@ func (m *restyMeta) GetStatusCode() int {
 	return m.StatusCode
 }
 
+// GetBody expone una copia defensiva del body HTTP para logging.
+func (m *restyMeta) GetBody() []byte {
+	if m == nil {
+		return nil
+	}
+
+	return append([]byte(nil), m.Body...)
+}
+
 func newRestyMeta(response *resty.Response) *restyMeta {
 	return &restyMeta{
 		StatusCode: response.StatusCode(),

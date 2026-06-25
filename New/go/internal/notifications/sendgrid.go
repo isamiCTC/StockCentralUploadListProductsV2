@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	sg "github.com/sendgrid/sendgrid-go"
 	sgmail "github.com/sendgrid/sendgrid-go/helpers/mail"
@@ -21,19 +22,25 @@ type SendGridClient struct {
 	apiKey string
 }
 
+type mailAttachment struct {
+	Content  string
+	Filename string
+	Type     string
+}
+
 // NewSendGridClient crea un cliente mínimo con el API key configurado.
 func NewSendGridClient(apiKey string) *SendGridClient {
 	return &SendGridClient{apiKey: apiKey}
 }
 
-// SendMail realiza el envío real con asunto, cuerpo corto y un único adjunto.
-func (c *SendGridClient) SendMail(ctx context.Context, fromEmail string, to []string, subject, body, attachmentPath string) error {
+// SendMail realiza el envío real con asunto, cuerpo corto y múltiples adjuntos.
+func (c *SendGridClient) SendMail(ctx context.Context, fromEmail string, to []string, subject, body string, attachmentPaths []string) error {
 	if len(to) == 0 {
 		return fmt.Errorf("sendgrid recipients list is empty")
 	}
 
-	// El adjunto se lee y codifica antes de armar el mail.
-	attachmentContent, attachmentName, err := readAttachment(attachmentPath)
+	// Los adjuntos se leen y codifican antes de armar el mail.
+	attachments, err := readAttachments(attachmentPaths)
 	if err != nil {
 		return err
 	}
@@ -52,13 +59,14 @@ func (c *SendGridClient) SendMail(ctx context.Context, fromEmail string, to []st
 	}
 	message.AddPersonalizations(personalization)
 
-	// El servicio actual siempre adjunta un único Excel.
-	message.AddAttachment(&sgmail.Attachment{
-		Content:     attachmentContent,
-		Type:        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-		Filename:    attachmentName,
-		Disposition: "attachment",
-	})
+	for _, attachment := range attachments {
+		message.AddAttachment(&sgmail.Attachment{
+			Content:     attachment.Content,
+			Type:        attachment.Type,
+			Filename:    attachment.Filename,
+			Disposition: "attachment",
+		})
+	}
 
 	// Recién acá convertimos el mensaje en una request HTTP concreta.
 	request := sg.GetRequest(c.apiKey, "/v3/mail/send", "https://api.sendgrid.com")
@@ -79,13 +87,30 @@ func (c *SendGridClient) SendMail(ctx context.Context, fromEmail string, to []st
 	return nil
 }
 
-// readAttachment levanta el archivo final y lo devuelve en base64.
-func readAttachment(path string) (contentBase64, filename string, err error) {
-	// Leemos el archivo completo porque SendGrid espera el adjunto inline.
-	data, readErr := os.ReadFile(path)
-	if readErr != nil {
-		return "", "", fmt.Errorf("read notification attachment %s: %w", path, readErr)
+// readAttachments levanta los archivos finales y los devuelve en base64.
+func readAttachments(paths []string) ([]mailAttachment, error) {
+	attachments := make([]mailAttachment, 0, len(paths))
+	for _, path := range paths {
+		data, readErr := os.ReadFile(path)
+		if readErr != nil {
+			return nil, fmt.Errorf("read notification attachment %s: %w", path, readErr)
+		}
+
+		attachments = append(attachments, mailAttachment{
+			Content:  base64.StdEncoding.EncodeToString(data),
+			Filename: filepath.Base(path),
+			Type:     detectAttachmentContentType(path),
+		})
 	}
 
-	return base64.StdEncoding.EncodeToString(data), filepath.Base(path), nil
+	return attachments, nil
+}
+
+func detectAttachmentContentType(path string) string {
+	switch strings.ToLower(filepath.Ext(path)) {
+	case ".xlsx":
+		return "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+	default:
+		return "application/octet-stream"
+	}
 }
