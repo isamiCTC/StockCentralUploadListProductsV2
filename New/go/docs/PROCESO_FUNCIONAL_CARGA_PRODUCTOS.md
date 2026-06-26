@@ -809,13 +809,13 @@ El proceso aplica una lógica específica para transformar la subcategoría envi
 
 ## Regla principal
 
-`CATEGORIA` y `SUB CATEGORIA` deben coincidir con el Marketplace de Club Patagonia.
+`CATEGORIA` y `SUB CATEGORIA` deben venir alineadas con el Marketplace de Club Patagonia, pero la resolución efectiva se apoya sobre todo en `SUB CATEGORIA`.
 
 ## Cadena de resolución actual
 
 La lógica funcional sigue este orden:
 
-1. intentar resolver por un mapeo hardcodeado ya conocido;
+1. intentar resolver por el mapeo de subcategorías precargado desde base de datos;
 2. si no alcanza, consultar el endpoint de subcategorías de la API de productos;
 3. si tampoco resuelve, usar la categoría de respaldo `Varios`.
 
@@ -875,7 +875,7 @@ Esto evita que cada pequeña diferencia de redacción en la subcategoría rompa 
 
 ## Integración con el endpoint de subcategorías de la API de productos
 
-Cuando no alcanza el mapeo conocido, el proceso consulta el endpoint de subcategorías dentro de la misma API de productos.
+Cuando no alcanza el mapeo precargado, el proceso consulta el endpoint de subcategorías dentro de la misma API de productos.
 
 ## Qué busca
 
@@ -1201,6 +1201,7 @@ Significa que esa fila no pudo resolverse correctamente y requiere corrección.
 
 ## Casos típicos de `PARTIAL_OK`
 
+- producto impactado, pero la categoría terminó en `Varios` por no poder resolverse la subcategoría;
 - producto impactado, pero una o más imágenes fallaron;
 - producto impactado, pero la fila se quedó sin tiempo durante imágenes;
 - producto impactado con parte visual incompleta.
@@ -1208,7 +1209,6 @@ Significa que esa fila no pudo resolverse correctamente y requiere corrección.
 ## Casos típicos de `ERROR`
 
 - la fila no pasó validaciones previas;
-- no se pudo resolver una etapa crítica de clasificación;
 - la API de productos rechazó la operación principal;
 - el producto no existía en un archivo corto de solo stock.
 
@@ -1334,7 +1334,7 @@ Desde el punto de vista funcional interno, esto significa que:
 
 - el proceso no manda correos de forma local o manual;
 - delega el envío real a SendGrid;
-- adjunta el archivo de resultado correspondiente;
+- adjunta el archivo de resultado correspondiente y también el archivo original ya procesado;
 - y considera fallido el envío si SendGrid responde con error.
 
 ## Tipo de envío
@@ -1345,7 +1345,7 @@ El proceso arma un correo de texto simple con:
 - una lista de destinatarios;
 - un asunto dinámico;
 - un cuerpo corto;
-- un único archivo Excel adjunto.
+- hasta dos adjuntos.
 
 ---
 
@@ -1470,13 +1470,15 @@ La lectura real del resultado no está en el cuerpo del correo, sino en el archi
 
 Se adjunta:
 
-- el archivo `Resultados`
+- el archivo `Resultados`;
+- y el archivo original ya movido a `processed`.
 
 ## Si el archivo terminó con error estructural
 
 Se adjunta:
 
-- el archivo `ErroresEstructura`
+- el archivo `ErroresEstructura`;
+- y el archivo original ya movido a `processed`.
 
 ## Qué implica esto
 

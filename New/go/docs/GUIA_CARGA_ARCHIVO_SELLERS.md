@@ -349,7 +349,9 @@ Ejemplo de varias imágenes:
 
 Importante:
 
-- si completás este campo, los links informados reemplazan los links anteriores del producto.
+- si completás este campo, las imágenes se procesan en el mismo orden en que informás los links;
+- si una imagen ya existe y es igual, el sistema no la vuelve a subir;
+- si una imagen cambia o no existe en esa posición, el sistema intenta actualizarla o crearla.
 
 ### `PRECIO`
 
@@ -395,7 +397,7 @@ Si no lo usás, podés dejarlo vacío.
 
 Es obligatoria.
 
-Tiene que coincidir exactamente con una categoría del Marketplace de Club Patagonia:
+Conviene informarla con la misma nomenclatura del Marketplace de Club Patagonia:
 
 https://www.clubpatagonia.com.ar/
 
@@ -407,14 +409,17 @@ No uses una categoría inventada ni una parecida.
 
 Es obligatoria.
 
-Tiene que coincidir exactamente con una subcategoría del Marketplace de Club Patagonia:
+Es el dato más importante para la clasificación final del producto.
+
+Conviene informarla con la misma nomenclatura del Marketplace de Club Patagonia:
 
 https://www.clubpatagonia.com.ar/
 
 Importante:
 
-- `CATEGORIA` y `SUB CATEGORIA` tienen que coincidir exactamente con las del Marketplace;
-- si no coinciden, al producto se le va a asignar por defecto la categoría `Varios`.
+- el sistema intenta resolver la clasificación principalmente a partir de `SUB CATEGORIA`;
+- si no logra resolverla con seguridad, el producto puede quedar en la categoría general `Varios`;
+- en ese caso, el producto puede cargarse igual, pero conviene revisarlo.
 
 ### `STOCK`
 
@@ -582,11 +587,11 @@ Cómo evitarlo:
 
 ## Qué pasa después de subir el archivo
 
-Una vez que subas el archivo al backoffice de sellers de Club Patagonia, si previamente nos proporcionaste un correo electrónico, vas a recibir un mail cuando el archivo haya sido tomado.
+Una vez que subas el archivo al backoffice de sellers de Club Patagonia, el sistema puede enviar un mail cuando el archivo haya sido tomado, siempre que las notificaciones estén habilitadas y exista al menos un destinatario válido asociado al proceso.
 
 Ese correo puede llegarte tanto si todo salió bien como si hubo observaciones o errores.
 
-Por eso, después de cada carga, te recomendamos revisar el mail y abrir el archivo adjunto.
+Por eso, después de cada carga, te recomendamos revisar el mail y abrir los adjuntos.
 
 En ese mail podés recibir uno de estos dos casos:
 

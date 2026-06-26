@@ -27,7 +27,19 @@ No cubre:
 
 ## Cómo correrlos
 
-Desde la carpeta `New/go`:
+La forma oficial de correr la suite es usando el script dedicado desde la carpeta `New/go`:
+
+```powershell
+./scripts/test.ps1
+```
+
+Ese script:
+
+- ejecuta `go test -count=1 ./...`;
+- muestra la salida real mientras corre;
+- y cierra con un resumen final más legible.
+
+Si querés correr algo puntual a mano, podés usar `go test` directamente. Por ejemplo:
 
 ```bash
 go test ./...
