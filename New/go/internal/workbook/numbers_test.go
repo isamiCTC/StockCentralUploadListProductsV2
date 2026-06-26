@@ -23,6 +23,7 @@ func TestParseFlexibleFloat(t *testing.T) {
 		{name: "thousands dot decimal comma", input: "1.234,56", want: 1234.56},
 		{name: "thousands comma decimal dot", input: "1,234.56", want: 1234.56},
 		{name: "spaces", input: " 1 234,50 ", want: 1234.50},
+		{name: "currency symbol", input: "$ 1.234,50", want: 1234.50},
 	}
 
 	for _, tc := range testCases {
@@ -66,5 +67,17 @@ func TestParseFlexibleIntRejectsDecimalValue(t *testing.T) {
 
 	if _, err := ParseFlexibleInt("12,5"); err == nil {
 		t.Fatal("ParseFlexibleInt should fail when the numeric value is not an integer")
+	}
+}
+
+func TestParseFlexibleIntWithCurrencySymbol(t *testing.T) {
+	t.Parallel()
+
+	got, err := ParseFlexibleInt("$ 1234")
+	if err != nil {
+		t.Fatalf("ParseFlexibleInt returned error: %v", err)
+	}
+	if got != 1234 {
+		t.Fatalf("ParseFlexibleInt = %d, want 1234", got)
 	}
 }

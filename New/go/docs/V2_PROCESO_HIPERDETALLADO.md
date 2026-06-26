@@ -131,19 +131,25 @@ El flujo principal de V2 se reparte entre estos archivos:
 26. `internal/results/writer.go`
     Escritura de `Resultados` y `ErroresEstructura`.
 
-27. `internal/notifications/service.go`
+27. `internal/reporting/row_outcome_builder.go`
+    Traducción de resultados exitosos y parciales a textos visibles para el Excel.
+
+28. `internal/reporting/error_presentation.go`
+    Traducción de errores técnicos a mensajes y detalles humanos para el Excel.
+
+29. `internal/notifications/service.go`
     Lógica funcional de mails.
 
-28. `internal/notifications/recipients.go`
+30. `internal/notifications/recipients.go`
     Resolución de destinatarios.
 
-29. `internal/notifications/sendgrid.go`
+31. `internal/notifications/sendgrid.go`
     Cliente concreto de SendGrid, el servicio externo usado para enviar mails.
 
-30. `internal/logging/logger.go`
+32. `internal/logging/logger.go`
     Logger propio, formato humano.
 
-31. `internal/logging/factory.go`
+33. `internal/logging/factory.go`
     Construcción de ambos archivos de log con rotación vía `lumberjack`, una librería de Go para rotar archivos de log.
 
 ---
@@ -1829,7 +1835,12 @@ En el Excel `Resultados`, cada fila expone:
 
 La decisión final de esos campos visibles ya no se arma “a mano” dentro de `file_processor.go`.
 
-Hoy existe una capa puntual en `internal/reporting/row_outcome_builder.go` que recibe hechos técnicos del procesamiento y los traduce a:
+Hoy existen dos capas puntuales en `internal/reporting` para separar mejor la presentación final:
+
+- `row_outcome_builder.go` para casos exitosos o parciales;
+- `error_presentation.go` para traducir errores técnicos a textos visibles al cliente.
+
+En conjunto traducen hechos técnicos del procesamiento a:
 
 - `Status`
 - `ImagesResult`
@@ -1913,6 +1924,22 @@ Ejemplos de `Detail`:
 #### Error previo o de API de producto
 
 - `Status = ERROR`
+
+En estos casos, el Excel de resultados busca evitar mensajes técnicos crudos como:
+
+- `status=400`
+- `returned status 404`
+- `context deadline exceeded`
+- bodies JSON completos de la API
+
+En cambio, hoy intenta mostrar textos humanos, por ejemplo:
+
+- `La API rechazó la operación por los datos enviados.`
+- `La API rechazó la operación: stock inválido.`
+- `No se pudo descargar una imagen porque la URL informada no existe.`
+- `El procesamiento de esta fila superó el tiempo máximo permitido.`
+
+Los detalles técnicos completos siguen viviendo en logs, no en el archivo que ve el cliente final.
 
 ---
 
@@ -2188,7 +2215,12 @@ Tolera:
 
 ### 5. Parsing numérico flexible
 
-Tolera mejor coma/punto.
+Tolera mejor:
+
+- coma o punto decimal;
+- separadores de miles comunes;
+- espacios internos;
+- y también el símbolo `$` en campos numéricos como precios u oferta, siempre que el resto del valor sea válido.
 
 ### 6. Resultado formal por SKU
 
