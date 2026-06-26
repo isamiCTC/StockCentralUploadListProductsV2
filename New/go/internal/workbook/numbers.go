@@ -29,13 +29,11 @@ import (
 // - remover el separador de miles
 // - convertir al formato que Go espera para ParseFloat
 func ParseFlexibleFloat(raw string) (float64, error) {
-	value := strings.TrimSpace(raw)
+	value := normalizeNumericInput(raw)
 	if value == "" {
-		return 0, fmt.Errorf("empty numeric value")
+		return 0, fmt.Errorf("el valor numérico está vacío")
 	}
 
-	// Quitamos espacios internos para tolerar variantes como "1 234,56".
-	value = strings.ReplaceAll(value, " ", "")
 	lastDot := strings.LastIndex(value, ".")
 	lastComma := strings.LastIndex(value, ",")
 
@@ -67,7 +65,7 @@ func ParseFlexibleFloat(raw string) (float64, error) {
 	// Una vez normalizado, ya podemos usar el parser estándar de Go.
 	parsed, err := strconv.ParseFloat(value, 64)
 	if err != nil {
-		return 0, fmt.Errorf("parse numeric value %q: %w", raw, err)
+		return 0, fmt.Errorf("formato numérico inválido")
 	}
 
 	return parsed, nil
@@ -84,8 +82,20 @@ func ParseFlexibleInt(raw string) (int, error) {
 	}
 
 	if math.Mod(floatValue, 1) != 0 {
-		return 0, fmt.Errorf("value %q is not an integer", raw)
+		return 0, fmt.Errorf("el valor debe ser un número entero sin decimales")
 	}
 
 	return int(floatValue), nil
+}
+
+// normalizeNumericInput limpia variantes frecuentes en celdas numéricas.
+//
+// Hoy toleramos:
+// - espacios alrededor y entre miles
+// - símbolo `$` pegado o separado del número
+func normalizeNumericInput(raw string) string {
+	value := strings.TrimSpace(raw)
+	value = strings.ReplaceAll(value, "$", "")
+	value = strings.ReplaceAll(value, " ", "")
+	return value
 }

@@ -947,13 +947,7 @@ func describeHTTPResponse(meta interface {
 // classifyRowError traduce un error técnico a un mensaje de fila más claro,
 // respetando si el contexto terminó por timeout o cancelación.
 func classifyRowError(ctx context.Context, baseMessage string, err error) (message, detail string) {
-	if ctx.Err() == context.DeadlineExceeded {
-		return "La fila excedió el timeout configurado", fmt.Sprintf("%s: %s", baseMessage, ctx.Err().Error())
-	}
-	if ctx.Err() == context.Canceled {
-		return "La fila fue cancelada", fmt.Sprintf("%s: %s", baseMessage, ctx.Err().Error())
-	}
-	return baseMessage, err.Error()
+	return reporting.BuildErrorPresentation(ctx, baseMessage, err)
 }
 
 func marshalLogJSON(value any) string {

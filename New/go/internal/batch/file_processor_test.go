@@ -108,6 +108,59 @@ func TestProcessMappedRowsMarksStockRowAsErrorWhenRowTimeoutExpires(t *testing.T
 	if results[0].Message != "La fila excedió el timeout configurado" {
 		t.Fatalf("Message = %q, want timeout message", results[0].Message)
 	}
+	if results[0].Detail != "El procesamiento de esta fila superó el tiempo máximo permitido." {
+		t.Fatalf("Detail = %q, want human timeout detail", results[0].Detail)
+	}
+}
+
+func TestProcessStockUpdateRowHumanizesAPIErrorDetail(t *testing.T) {
+	t.Parallel()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.Method {
+		case http.MethodGet:
+			_, _ = w.Write([]byte(`{"Result":{"Sku":"ABC123","Stock":5}}`))
+		case http.MethodPut:
+			w.WriteHeader(http.StatusBadRequest)
+			_, _ = w.Write([]byte(`{"Message":"stock inválido"}`))
+		default:
+			http.Error(w, "unexpected method", http.StatusMethodNotAllowed)
+		}
+	}))
+	defer server.Close()
+
+	client := products.NewClient(appconfig.ProductsAPIConfig{
+		BaseURL:        server.URL,
+		ProviderName:   "CTC",
+		TimeoutSeconds: 5,
+	}, "token")
+
+	processor := &FileProcessor{
+		rowWorkers:     1,
+		rowTimeout:     time.Second,
+		productsClient: client,
+		logs:           discardLoggerSet(),
+	}
+
+	row := workbook.MappedRow{
+		ExcelRowNumber: 2,
+		SKU:            "ABC123",
+		StockUpdate:    &workbook.StockUpdateRow{SKU: "ABC123", Stock: 10},
+	}
+
+	result := processor.processStockUpdateRow(context.Background(), 342, row, discardLoggerSet().Detail.NewBuffer())
+
+	if result.Status != reporting.RowStatusError {
+		t.Fatalf("Status = %q, want %q", result.Status, reporting.RowStatusError)
+	}
+	if result.Message != "Falló la actualización de stock en la API" {
+		t.Fatalf("Message = %q", result.Message)
+	}
+	wantDetail := "La API rechazó la operación: stock inválido."
+	if result.Detail != wantDetail {
+		t.Fatalf("Detail = %q, want %q", result.Detail, wantDetail)
+	}
 }
 
 func TestProcessFullImportRowMarksPartialWhenTimeoutExpiresDuringImages(t *testing.T) {
