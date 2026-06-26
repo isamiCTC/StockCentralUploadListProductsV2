@@ -125,25 +125,20 @@ func copyAndRemove(sourcePath, destinationPath string) error {
 	if err != nil {
 		return fmt.Errorf("open source file: %w", err)
 	}
-	defer func() {
-		_ = sourceFile.Close()
-	}()
 
 	info, err := sourceFile.Stat()
 	if err != nil {
+		_ = sourceFile.Close()
 		return fmt.Errorf("stat source file: %w", err)
 	}
 
 	destinationFile, err := os.Create(destinationPath)
 	if err != nil {
+		_ = sourceFile.Close()
 		return fmt.Errorf("create destination file: %w", err)
 	}
 
 	copyErr := func() error {
-		defer func() {
-			_ = destinationFile.Close()
-		}()
-
 		if _, err := io.Copy(destinationFile, sourceFile); err != nil {
 			return fmt.Errorf("copy file contents: %w", err)
 		}
@@ -155,9 +150,19 @@ func copyAndRemove(sourcePath, destinationPath string) error {
 		}
 		return nil
 	}()
+	closeDestinationErr := destinationFile.Close()
+	closeSourceErr := sourceFile.Close()
 	if copyErr != nil {
 		_ = os.Remove(destinationPath)
 		return copyErr
+	}
+	if closeDestinationErr != nil {
+		_ = os.Remove(destinationPath)
+		return fmt.Errorf("close destination file: %w", closeDestinationErr)
+	}
+	if closeSourceErr != nil {
+		_ = os.Remove(destinationPath)
+		return fmt.Errorf("close source file: %w", closeSourceErr)
 	}
 
 	if err := os.Remove(sourcePath); err != nil {
