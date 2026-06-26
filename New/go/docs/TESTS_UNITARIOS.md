@@ -44,15 +44,20 @@ go test ./internal/products/...
 
 ## Resumen general
 
-Hoy existen **35 tests unitarios**.
+Hoy existen **54 tests unitarios**.
 
 Están concentrados en estas áreas:
 
 - `internal/batch`
+- `internal/catalog`
 - `internal/config`
+- `internal/images`
 - `internal/intake`
+- `internal/logging`
 - `internal/notifications`
 - `internal/products`
+- `internal/providers`
+- `internal/reporting`
 - `internal/results`
 - `internal/workbook`
 
@@ -63,6 +68,7 @@ En términos prácticos, hoy se cubren especialmente:
 - movimientos de archivos;
 - escritura de Excels de salida;
 - carga de configuración y secretos;
+- presentación final de resultados para cliente/negocio;
 - resolución de destinatarios y notificación;
 - algunos caminos críticos de timeout por fila.
 
@@ -172,11 +178,76 @@ Qué valida:
 - la fila termina en `PARTIAL_OK`;
 - `ProductResult` queda `ACTUALIZADO`;
 - `ImagesResult` queda `PARCIAL`;
-- el mensaje refleja que el timeout ocurrió durante imágenes.
+- el mensaje final queda en formato cliente-final;
+- el detalle explica que las imágenes no pudieron completarse dentro del tiempo esperado.
 
 Por qué importa:
 
 - protege la semántica parcial correcta del proceso.
+
+### `TestProcessFullImportRowMarksPartialWhenCategoryFallsBack`
+
+Qué prueba:
+
+- que una fila full import quede `PARTIAL_OK` cuando la categoría informada no se puede resolver y termina en la categoría general configurada.
+
+Qué valida:
+
+- la fila no queda `OK` silenciosamente;
+- el mensaje pasa a `Producto actualizado con observaciones`;
+- el detalle explica que se asignó una categoría general.
+
+Por qué importa:
+
+- protege una observación de negocio relevante para el Excel que ve cliente final.
+
+## `internal/catalog`
+
+Archivo: `internal/catalog/resolver_test.go`
+
+### `TestResolveBySubcategoryMatchesDatabaseMappingWithLooseNormalization`
+
+Qué prueba:
+
+- que la resolución desde el mapping precargado de DB soporte normalización laxa.
+
+Qué valida:
+
+- tolerancia a mayúsculas, tildes y espacios internos;
+- que no haga falta salir a la API cuando el mapping local ya alcanza.
+
+Por qué importa:
+
+- protege el primer nivel de resolución de categorías.
+
+### `TestResolveBySubcategoryCallsAPIWithOriginalValueWhenDatabaseMappingDoesNotMatch`
+
+Qué prueba:
+
+- el fallback a la API de subcategorías cuando el mapping local no encuentra match.
+
+Qué valida:
+
+- que la búsqueda use el valor original;
+- que el resultado venga desde la API cuando corresponde.
+
+Por qué importa:
+
+- protege el segundo escalón de resolución acordado para categorías.
+
+### `TestResolveBySubcategoryFallsBackWhenAPIHasNoMatches`
+
+Qué prueba:
+
+- el fallback final cuando tampoco hay match por API.
+
+Qué valida:
+
+- que el resolvedor devuelva la categoría general configurada.
+
+Por qué importa:
+
+- asegura que la cadena completa de resolución no termine en vacío.
 
 ---
 
@@ -509,6 +580,173 @@ Por qué importa:
 
 - asegura que el rechazo estructural sea legible para usuario final.
 
+## `internal/reporting`
+
+Archivo: `internal/reporting/row_outcome_builder_test.go`
+
+### `TestBuildStockSuccessPresentation`
+
+Qué prueba:
+
+- el texto final visible para una fila de stock update exitosa.
+
+Qué valida:
+
+- `Status = OK`;
+- mensaje de stock orientado a cliente;
+- detalle sin códigos HTTP ni tecnicismos.
+
+Por qué importa:
+
+- protege la separación entre hechos técnicos y redacción final del Excel.
+
+### `TestBuildFullImportPresentationReturnsOKForUpdatedProductWithUnchangedImages`
+
+Qué prueba:
+
+- el caso donde el producto se actualiza y las imágenes ya estaban cargadas.
+
+Qué valida:
+
+- la fila queda `OK`;
+- `ImagesResult = OK`;
+- el detalle dice que las imágenes ya se encontraban cargadas.
+
+Por qué importa:
+
+- evita reportar como problema algo que en realidad es un resultado correcto.
+
+### `TestBuildFullImportPresentationReturnsPartialForFallbackCategory`
+
+Qué prueba:
+
+- el caso donde la categoría informada no se reconoce y se asigna una categoría general.
+
+Qué valida:
+
+- la fila pasa a `PARTIAL_OK`;
+- el mensaje queda `... con observaciones`;
+- el detalle explica la asignación de categoría general.
+
+Por qué importa:
+
+- protege una decisión clave de negocio para el Excel final.
+
+### `TestBuildFullImportPresentationReturnsPartialForInterruptedImages`
+
+Qué prueba:
+
+- la presentación final cuando el producto se impactó, pero las imágenes no terminaron por timeout.
+
+Qué valida:
+
+- `Status = PARTIAL_OK`;
+- `ImagesResult = PARCIAL`;
+- detalle cliente-final explicando la interrupción.
+
+Por qué importa:
+
+- asegura consistencia en un caso parcial sensible.
+
+## `internal/images`
+
+Archivo: `internal/images/downloader_test.go`
+
+### `TestIsWebPImageDetectsContentType`
+
+Qué prueba:
+
+- la detección de WebP por content-type.
+
+Qué valida:
+
+- que `image/webp` se reconozca como WebP aunque el contenido no sea una imagen real completa.
+
+Por qué importa:
+
+- protege la heurística mínima que decide si hay que convertir imágenes WebP.
+
+### `TestIsWebPImageDetectsRIFFHeader`
+
+Qué prueba:
+
+- la detección de WebP por firma binaria.
+
+Qué valida:
+
+- que un encabezado `RIFF ... WEBP` se identifique correctamente.
+
+Por qué importa:
+
+- evita depender solo del content-type reportado por el servidor remoto.
+
+### `TestIsWebPImageIgnoresJPEGData`
+
+Qué prueba:
+
+- que un payload JPEG no se marque como WebP.
+
+Qué valida:
+
+- que no haya falsos positivos en la detección.
+
+Por qué importa:
+
+- evita conversiones innecesarias o incorrectas.
+
+## `internal/logging`
+
+Archivo: `internal/logging/logger_test.go`
+
+### `TestBufferFlushSeparatesBlockWithBlankLines`
+
+Qué prueba:
+
+- que el buffer de logs escriba el bloque completo con separación visual.
+
+Qué valida:
+
+- línea en blanco al inicio del bloque;
+- línea en blanco al final del bloque;
+- presencia de todas las líneas acumuladas.
+
+Por qué importa:
+
+- protege el formato legible del `detail` por SKU.
+
+### `TestLoggerBlankWritesSingleEmptyLine`
+
+Qué prueba:
+
+- la escritura de una línea vacía explícita.
+
+Qué valida:
+
+- que `Blank()` use el separador de línea del sistema operativo.
+
+Por qué importa:
+
+- mantiene compatibilidad entre Linux/macOS y visores simples de Windows.
+
+## `internal/providers`
+
+Archivo: `internal/providers/sqlserver_test.go`
+
+### `TestQueryContextKeepsRowsUsableAfterReturn`
+
+Qué prueba:
+
+- que `SQLServer.QueryContext` no invalide las filas apenas retorna.
+
+Qué valida:
+
+- que `rows.Next()` siga funcionando correctamente después del return;
+- que el contexto siga siendo usable durante el recorrido de filas.
+
+Por qué importa:
+
+- protege una decisión técnica importante del wrapper de SQL Server para no cortar la lectura del resultset antes de tiempo.
+
 ---
 
 ## `internal/workbook`
@@ -697,8 +935,10 @@ Hoy la cobertura conceptual más fuerte está en:
 
 - semántica legacy de producto;
 - semántica legacy de imágenes;
+- resolución de categorías con mapping + API + fallback;
 - parsing y validación del workbook;
 - generación de archivos de salida;
+- presentación final de resultados por fila;
 - reglas de notificación;
 - timeouts críticos de fila.
 
@@ -713,8 +953,7 @@ Hoy no se ve cobertura unitaria específica, por ejemplo, para:
 - lectura real de Excel desde archivos de entrada complejos;
 - integración real con SQL Server;
 - integración real con SendGrid;
-- logging como salida observable;
-- `catalog/resolver` con casos propios dedicados;
+- logging como salida observable de punta a punta en archivos reales;
 - `products/downloader` con batería específica de formatos de imagen.
 
 Esto no significa que esté mal. Solo marca qué partes hoy dependen más de revisión manual, lectura de código o futuras pruebas de integración.

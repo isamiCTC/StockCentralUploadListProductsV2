@@ -18,10 +18,10 @@ func TestBufferFlushSeparatesBlockWithBlankLines(t *testing.T) {
 	buffer.Flush()
 
 	got := output.String()
-	if !strings.HasPrefix(got, "\n") {
+	if !strings.HasPrefix(got, systemLineBreak) {
 		t.Fatalf("output should start with a blank line, got %q", got)
 	}
-	if !strings.HasSuffix(got, "\n\n") {
+	if !strings.HasSuffix(got, systemLineBreak+systemLineBreak) {
 		t.Fatalf("output should end with a blank line, got %q", got)
 	}
 	if !strings.Contains(got, "sku-start") || !strings.Contains(got, "sku-end") {
@@ -37,7 +37,7 @@ func TestLoggerBlankWritesSingleEmptyLine(t *testing.T) {
 
 	logger.Blank()
 
-	if got := output.String(); got != "\n" {
+	if got := output.String(); got != systemLineBreak {
 		t.Fatalf("Blank() = %q, want newline", got)
 	}
 }

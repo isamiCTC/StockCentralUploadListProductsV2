@@ -622,9 +622,8 @@ func (p *FileProcessor) processStockUpdateRow(ctx context.Context, providerID in
 	}
 
 	// Si la API respondió bien, la fila queda totalmente OK.
-	result.Status = reporting.RowStatusOK
 	result.ProductResult = "ACTUALIZADO"
-	result.Detail = describeMeta(updateMeta)
+	applyPresentation(&result, reporting.BuildStockSuccessPresentation())
 
 	rowLogs.Info("stock-sync-ok",
 		logging.Int("provider_id", providerID),
@@ -745,61 +744,47 @@ func (p *FileProcessor) processFullImportRow(ctx context.Context, providerID int
 
 	// Si la sincronización global de imágenes está apagada, la fila termina acá.
 	if !p.syncImages {
-		result.Status = reporting.RowStatusOK
-		result.Message = "Producto impactado sin sincronización de imágenes"
-		result.Detail = "La sincronizacion global de imagenes esta desactivada por configuracion."
-		result.ImagesResult = "NO_APLICA"
+		applyPresentation(&result, reporting.BuildFullImportPresentation(upsertResult.Action, resolution.Source, false, reporting.ImageSyncFacts{}, nil))
 		return result
 	}
 
 	// Si la fila no trajo imágenes válidas, también termina bien acá.
 	if !row.FullImport.SyncImages {
-		result.Status = reporting.RowStatusOK
-		result.Message = "Producto impactado sin sincronización de imágenes"
-		result.Detail = "La fila quedó OK y no trajo URLs válidas de imágenes."
-		result.ImagesResult = "NO_APLICA"
+		applyPresentation(&result, reporting.BuildFullImportPresentation(upsertResult.Action, resolution.Source, false, reporting.ImageSyncFacts{}, nil))
 		return result
 	}
 
 	// Recién en este punto empezamos a tratar imágenes.
-	imagesSynced, imagesFailed, imageDetails := p.syncRowImages(ctx, providerID, row, rowLogs)
+	imageFacts := p.syncRowImages(ctx, providerID, row, rowLogs)
 
 	// Si el contexto venció durante imágenes, el producto ya pudo haber quedado
 	// impactado, por eso devolvemos PARTIAL_OK.
 	if ctx.Err() != nil {
-		result.Status = reporting.RowStatusPartialOK
-		result.ImagesResult = "PARCIAL"
-		result.Message, result.Detail = classifyRowTimeoutWhileImages(ctx, imagesSynced, imagesFailed, imageDetails)
+		applyPresentation(&result, reporting.BuildFullImportPresentation(upsertResult.Action, resolution.Source, true, imageFacts, ctx.Err()))
 		return result
 	}
 
 	// También queda parcial si alguna imagen falló aunque el producto se haya creado.
-	if imagesFailed > 0 {
-		result.Status = reporting.RowStatusPartialOK
-		result.ImagesResult = "PARCIAL"
-		result.Message = "Producto impactado con errores en imágenes"
-		result.Detail = strings.Join(imageDetails, " | ")
+	if imageFacts.FailedCount > 0 {
+		applyPresentation(&result, reporting.BuildFullImportPresentation(upsertResult.Action, resolution.Source, true, imageFacts, nil))
 		return result
 	}
 
-	result.Status = reporting.RowStatusOK
-	result.ImagesResult = "OK"
-	result.Message = "Producto e imágenes impactados correctamente"
-	result.Detail = fmt.Sprintf("Imagenes sincronizadas correctamente: %d", imagesSynced)
+	applyPresentation(&result, reporting.BuildFullImportPresentation(upsertResult.Action, resolution.Source, true, imageFacts, nil))
 	return result
 }
 
 // syncRowImages procesa las imágenes de una fila y devuelve métricas útiles
 // para el Excel final de resultados.
-func (p *FileProcessor) syncRowImages(ctx context.Context, providerID int, row workbook.MappedRow, rowLogs *logging.Buffer) (imagesSynced, imagesFailed int, details []string) {
+func (p *FileProcessor) syncRowImages(ctx context.Context, providerID int, row workbook.MappedRow, rowLogs *logging.Buffer) reporting.ImageSyncFacts {
 	if row.FullImport == nil || len(row.FullImport.ImageURLs) == 0 {
-		return 0, 0, nil
+		return reporting.ImageSyncFacts{}
 	}
 
+	facts := reporting.ImageSyncFacts{}
 	for index, imageURL := range row.FullImport.ImageURLs {
 		// Antes de iniciar cada imagen chequeamos si la fila ya venció.
 		if err := ctx.Err(); err != nil {
-			details = append(details, fmt.Sprintf("Procesamiento de imagenes interrumpido: %s", err.Error()))
 			break
 		}
 
@@ -815,11 +800,9 @@ func (p *FileProcessor) syncRowImages(ctx context.Context, providerID int, row w
 		base64Image, err := p.imageDownloader.DownloadAsBase64(ctx, imageURL)
 		if err != nil {
 			if ctx.Err() != nil {
-				details = append(details, fmt.Sprintf("Imagen %d: timeout o cancelacion: %s", index, ctx.Err().Error()))
 				break
 			}
-			imagesFailed++
-			details = append(details, fmt.Sprintf("Imagen %d: fallo descarga: %s", index, err.Error()))
+			facts.FailedCount++
 			rowLogs.Error("image-download-failed",
 				logging.Int("provider_id", providerID),
 				logging.Int("excel_row", row.ExcelRowNumber),
@@ -841,11 +824,9 @@ func (p *FileProcessor) syncRowImages(ctx context.Context, providerID int, row w
 		syncResult, err := p.productsClient.SyncImageLegacy(ctx, providerID, row.SKU, index, base64Image)
 		if err != nil {
 			if ctx.Err() != nil {
-				details = append(details, fmt.Sprintf("Imagen %d: timeout o cancelacion: %s", index, ctx.Err().Error()))
 				break
 			}
-			imagesFailed++
-			details = append(details, fmt.Sprintf("Imagen %d: fallo sync API: %s", index, err.Error()))
+			facts.FailedCount++
 			rowLogs.Error("image-sync-failed",
 				logging.Int("provider_id", providerID),
 				logging.Int("excel_row", row.ExcelRowNumber),
@@ -856,10 +837,14 @@ func (p *FileProcessor) syncRowImages(ctx context.Context, providerID int, row w
 			continue
 		}
 
-		imagesSynced++
 		// La API puede decir que la imagen ya era igual y que no hizo falta subirla.
-		if syncResult.Action == "SKIP_SAME_IMAGE" {
-			details = append(details, fmt.Sprintf("Imagen %d: sin cambios, no se vuelve a subir", index))
+		switch syncResult.Action {
+		case "CREATE":
+			facts.CreatedCount++
+		case "SKIP_SAME_IMAGE":
+			facts.UnchangedCount++
+		default:
+			facts.UpdatedCount++
 		}
 		rowLogs.Info("image-sync-ok",
 			logging.Int("provider_id", providerID),
@@ -879,7 +864,7 @@ func (p *FileProcessor) syncRowImages(ctx context.Context, providerID int, row w
 		)
 	}
 
-	return imagesSynced, imagesFailed, details
+	return facts
 }
 
 // baseRowResult arma la estructura común para cualquier resultado de fila.
@@ -889,6 +874,18 @@ func baseRowResult(providerID int, row workbook.MappedRow) reporting.RowResult {
 		ExcelRowNumber: row.ExcelRowNumber,
 		SKU:            row.SKU,
 	}
+}
+
+// applyPresentation copia al `RowResult` los campos visibles al usuario final.
+func applyPresentation(result *reporting.RowResult, presentation reporting.RowPresentation) {
+	if result == nil {
+		return
+	}
+
+	result.Status = presentation.Status
+	result.ImagesResult = presentation.ImagesResult
+	result.Message = presentation.Message
+	result.Detail = presentation.Detail
 }
 
 // joinRowIssues convierte los problemas del mapper en un texto entendible.
@@ -957,22 +954,6 @@ func classifyRowError(ctx context.Context, baseMessage string, err error) (messa
 		return "La fila fue cancelada", fmt.Sprintf("%s: %s", baseMessage, ctx.Err().Error())
 	}
 	return baseMessage, err.Error()
-}
-
-// classifyRowTimeoutWhileImages explica qué se llegó a hacer antes del corte
-// cuando el producto ya estaba impactado pero las imágenes no terminaron.
-func classifyRowTimeoutWhileImages(ctx context.Context, imagesSynced, imagesFailed int, details []string) (message, detail string) {
-	if ctx.Err() == context.DeadlineExceeded {
-		message = "Producto impactado pero la fila excedió el timeout durante imágenes"
-	} else {
-		message = "Producto impactado pero la fila fue cancelada durante imágenes"
-	}
-
-	parts := make([]string, 0, len(details)+2)
-	parts = append(parts, fmt.Sprintf("Imagenes sincronizadas antes del corte: %d", imagesSynced))
-	parts = append(parts, fmt.Sprintf("Imagenes fallidas antes del corte: %d", imagesFailed))
-	parts = append(parts, details...)
-	return message, strings.Join(parts, " | ")
 }
 
 func marshalLogJSON(value any) string {

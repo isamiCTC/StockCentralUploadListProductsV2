@@ -3,6 +3,7 @@ package logging
 import (
 	"fmt"
 	"io"
+	"runtime"
 	"strings"
 	"sync"
 	"time"
@@ -21,6 +22,8 @@ const (
 	LevelWarn  Level = "WARN"
 	LevelError Level = "ERROR"
 )
+
+var systemLineBreak = detectSystemLineBreak()
 
 // Field representa un par clave/valor para enriquecer una línea de log
 // sin tener que construir strings manualmente en cada llamada.
@@ -93,7 +96,7 @@ func (l *Logger) Blank() {
 
 	l.mu.Lock()
 	defer l.mu.Unlock()
-	_, _ = io.WriteString(l.writer, "\n")
+	_, _ = io.WriteString(l.writer, systemLineBreak)
 }
 
 // log aplica el filtro de nivel, formatea la línea y la escribe protegida
@@ -128,11 +131,11 @@ func (b *Buffer) Flush() {
 	}
 
 	var block strings.Builder
-	block.WriteString("\n")
+	block.WriteString(systemLineBreak)
 	for _, line := range b.lines {
 		block.WriteString(line)
 	}
-	block.WriteString("\n")
+	block.WriteString(systemLineBreak)
 
 	b.logger.mu.Lock()
 	defer b.logger.mu.Unlock()
@@ -191,6 +194,14 @@ func formatLine(ts time.Time, level Level, msg string, fields ...Field) string {
 		}
 	}
 
-	b.WriteString("\n")
+	b.WriteString(systemLineBreak)
 	return b.String()
+}
+
+func detectSystemLineBreak() string {
+	if runtime.GOOS == "windows" {
+		return "\r\n"
+	}
+
+	return "\n"
 }

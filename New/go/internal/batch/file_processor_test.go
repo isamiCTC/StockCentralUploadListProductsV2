@@ -187,8 +187,82 @@ func TestProcessFullImportRowMarksPartialWhenTimeoutExpiresDuringImages(t *testi
 	if result.ImagesResult != "PARCIAL" {
 		t.Fatalf("ImagesResult = %q, want %q", result.ImagesResult, "PARCIAL")
 	}
-	if result.Message != "Producto impactado pero la fila excedió el timeout durante imágenes" {
-		t.Fatalf("Message = %q, want timeout during images message", result.Message)
+	if result.Message != "Producto actualizado con observaciones" {
+		t.Fatalf("Message = %q, want %q", result.Message, "Producto actualizado con observaciones")
+	}
+	wantDetail := "No se registraron cambios en las imágenes del producto. El procesamiento de imágenes no pudo completarse dentro del tiempo esperado."
+	if result.Detail != wantDetail {
+		t.Fatalf("Detail = %q, want %q", result.Detail, wantDetail)
+	}
+}
+
+func TestProcessFullImportRowMarksPartialWhenCategoryFallsBack(t *testing.T) {
+	t.Parallel()
+
+	apiServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.Method {
+		case http.MethodGet:
+			_, _ = w.Write([]byte(`[]`))
+		case http.MethodPut:
+			_, _ = w.Write([]byte(`{}`))
+		default:
+			http.Error(w, "unexpected method", http.StatusMethodNotAllowed)
+		}
+	}))
+	defer apiServer.Close()
+
+	client := products.NewClient(appconfig.ProductsAPIConfig{
+		BaseURL:        apiServer.URL,
+		ProviderName:   "CTC",
+		TimeoutSeconds: 5,
+	}, "token")
+
+	processor := &FileProcessor{
+		rowWorkers: 1,
+		rowTimeout: 250 * time.Millisecond,
+		syncImages: false,
+		catalogResolver: catalog.NewResolver(client, nil, products.CategoryBranch{
+			Code: "1041",
+			Name: "Varios",
+		}),
+		productsClient: client,
+		logs:           discardLoggerSet(),
+	}
+
+	row := workbook.MappedRow{
+		ExcelRowNumber: 4,
+		SKU:            "FALL123",
+		FullImport: &workbook.FullImportRow{
+			SKU:              "FALL123",
+			Name:             "Producto fallback",
+			Brand:            "Marca",
+			Description:      "Descripcion",
+			ShortDescription: "Corta",
+			Stock:            5,
+			Price:            100,
+			ListPrice:        120,
+			NetPrice:         90,
+			Taxes:            21,
+			Height:           1,
+			Width:            2,
+			Depth:            3,
+			WeightKilograms:  0.5,
+			SubCategory:      "Categoria inexistente",
+		},
+	}
+
+	result := processor.processFullImportRow(context.Background(), 342, row, discardLoggerSet().Detail.NewBuffer())
+
+	if result.Status != reporting.RowStatusPartialOK {
+		t.Fatalf("Status = %q, want %q", result.Status, reporting.RowStatusPartialOK)
+	}
+	if result.Message != "Producto actualizado con observaciones" {
+		t.Fatalf("Message = %q, want %q", result.Message, "Producto actualizado con observaciones")
+	}
+	wantDetail := "La categoría informada no pudo identificarse y se asignó una categoría general al producto. No se procesaron imágenes para este producto."
+	if result.Detail != wantDetail {
+		t.Fatalf("Detail = %q, want %q", result.Detail, wantDetail)
 	}
 }
 

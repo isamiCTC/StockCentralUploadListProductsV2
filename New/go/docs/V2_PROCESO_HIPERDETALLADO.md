@@ -436,6 +436,13 @@ Siempre usa:
 
 Cada logger tiene `sync.Mutex`, así que múltiples goroutines no mezclan texto dentro de una misma línea.
 
+Además, el logger elige el separador de línea según el sistema operativo:
+
+- `\r\n` cuando corre en Windows;
+- `\n` cuando corre en otros sistemas.
+
+Eso ayuda a que los archivos se lean correctamente tanto en Linux/macOS como en visores simples de Windows, por ejemplo Bloc de notas.
+
 Además, hoy el `detail` por fila usa un buffer temporal por SKU:
 
 - cada worker acumula en memoria las líneas de su fila;
@@ -1395,8 +1402,8 @@ Fila vacía omitida sin error técnico.
 6. si sale bien:
    - `Status = OK`
    - `ProductResult = ACTUALIZADO`
-   - `Message = Actualización de stock completada`
-   - `Detail = status HTTP`
+   - `Message = Stock actualizado correctamente`
+   - `Detail = El stock del producto fue actualizado correctamente.`
 
 ### Semántica heredada que conserva
 
@@ -1428,8 +1435,10 @@ Eso es fiel al comportamiento del legacy.
 8. si imágenes están desactivadas globalmente -> `OK` sin imágenes;
 9. si la fila no trajo URLs válidas -> `OK` sin imágenes;
 10. si trae URLs válidas -> sincroniza imágenes;
-11. si alguna imagen falla -> `PARTIAL_OK`;
-12. si todas salen bien -> `OK`.
+11. si la categoría termina en la rama general configurada -> `PARTIAL_OK`;
+12. si alguna imagen falla -> `PARTIAL_OK`;
+13. si el producto quedó impactado pero imágenes se interrumpe por timeout o cancelación -> `PARTIAL_OK`;
+14. si no hubo observaciones relevantes -> `OK`.
 
 ### Qué usa del DTO full import
 
@@ -1818,6 +1827,20 @@ En el Excel `Resultados`, cada fila expone:
 - `Mensaje`
 - `Detalle`
 
+La decisión final de esos campos visibles ya no se arma “a mano” dentro de `file_processor.go`.
+
+Hoy existe una capa puntual en `internal/reporting/row_outcome_builder.go` que recibe hechos técnicos del procesamiento y los traduce a:
+
+- `Status`
+- `ImagesResult`
+- `Message`
+- `Detail`
+
+Eso separa mejor:
+
+- la orquestación técnica del batch;
+- de la forma final en que el resultado se presenta a negocio o cliente final.
+
 ### `ProductResult`
 
 Hoy puede verse, por ejemplo:
@@ -1840,11 +1863,15 @@ Hoy puede verse:
 
 - `Status = OK`
 - `ImagesResult = NO_APLICA`
+- `Message = Producto creado correctamente` o `Producto actualizado correctamente`
+- `Detail = No se procesaron imágenes para este producto.`
 
 #### Producto OK sin URLs de imágenes
 
 - `Status = OK`
 - `ImagesResult = NO_APLICA`
+- `Message = Producto creado correctamente` o `Producto actualizado correctamente`
+- `Detail = No se procesaron imágenes para este producto.`
 
 Esto aplica cuando `URL IMAGENES` viene vacía o con solo espacios.
 Si la celda trae contenido no vacío pero inválido, la fila no cae acá:
@@ -1853,19 +1880,35 @@ Si la celda trae contenido no vacío pero inválido, la fila no cae acá:
 - el mapper agrega el issue `URL de imagen inválida`;
 - y la fila no llega a la etapa de sincronización de imágenes.
 
-#### Producto OK con una o más imágenes fallidas
+#### Producto con observaciones por categoría general o imágenes parciales
 
 - `Status = PARTIAL_OK`
 - `ImagesResult = PARCIAL`
 
-`PARCIAL` marca que el producto quedó impactado pero la parte de imágenes no terminó completamente bien.
-El valor realmente explicativo queda en `Detail`, donde hoy se informa:
+`PARTIAL_OK` marca que el producto quedó impactado, pero hubo una observación importante para negocio.
 
-- qué imagen falló;
-- si falló la descarga o el sync API;
-- o si hubo timeout/cancelación durante imágenes;
-- junto con cantidades de imágenes sincronizadas y fallidas antes del corte;
-- y, en errores HTTP, status y body truncado para diagnóstico.
+Puede deberse, por ejemplo, a:
+
+- categoría informada no reconocida y reemplazada por la categoría general configurada;
+- una o más imágenes no procesadas;
+- timeout o cancelación durante imágenes después de impactar el producto.
+
+El valor realmente explicativo queda en `Detail`, donde hoy se arma con oraciones cortas, por ejemplo:
+
+- `La categoría informada no pudo identificarse y se asignó una categoría general al producto.`
+- `Se actualizaron 2 imágenes correctamente.`
+- `1 imagen no pudo procesarse.`
+- `El procesamiento de imágenes no pudo completarse dentro del tiempo esperado.`
+
+#### Producto OK con imágenes ya cargadas o sin cambios
+
+- `Status = OK`
+- `ImagesResult = OK`
+
+Ejemplos de `Detail`:
+
+- `2 imágenes ya se encontraban cargadas.`
+- `No se registraron cambios en las imágenes del producto.`
 
 #### Error previo o de API de producto
 
