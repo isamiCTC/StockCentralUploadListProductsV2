@@ -1,37 +1,144 @@
-# Reescritura Go
+# StockCentralUploadListProductsV2 (Go)
 
-Esta carpeta contiene el diseño y la futura implementación en Go del reemplazo de `StockCentralUploadListProducts`.
+Reescritura en Go del proceso legacy de carga masiva de productos por Excel.
 
-Nombre del nuevo proyecto:
+Este proyecto implementa un **batch de una sola corrida** (one-shot):
 
-- `StockCentralUploadListProductsV2`
+- detecta archivos `.xlsx` de providers válidos;
+- valida estructura del archivo;
+- procesa filas de forma concurrente;
+- impacta productos (y opcionalmente imágenes) vía API;
+- genera archivo de resultados;
+- envía notificación por correo con adjuntos.
 
-Objetivo de esta etapa:
+## Estado y enfoque
 
-- capturar el diseño antes de escribir código
-- acordar estructura de carpetas, responsabilidades y contratos
-- separar claramente la nueva arquitectura del código legacy en .NET
+La V2 mantiene la lógica funcional principal del legado, pero cambia el modelo operativo:
 
-Principios ya acordados:
+- no es un Windows Service en loop;
+- no hace scheduling interno;
+- termina al finalizar la corrida;
+- deja la planificación a un scheduler externo (Task Scheduler, cron, etc.).
 
-- el nuevo binario será un batch de una sola pasada
-- el scheduling vivirá por fuera del proceso
-- la configuración no sensible estará en `config/appsettings.toml`
-- los secretos vivirán en `config/.env`
-- el `main.go` será un orquestador puro
-- el logging tendrá dos archivos:
-  - `batch-summary.log`
-  - `batch-detail.log`
+## Estructura principal
 
-Documentos disponibles:
+```text
+New/go/
+  cmd/StockCentralUploadListProductsV2/   # entrypoint del binario
+  internal/                               # lógica de aplicación y dominio
+  config/                                 # appsettings.example.toml y .env.example
+  docs/                                   # documentación funcional/técnica
+  sql/                                    # scripts SQL versionados
+  scripts/                                # build.ps1 y test.ps1
+```
 
-- `docs/ARCHITECTURE.md`
-- `docs/PROJECT_STRUCTURE.md`
-- `docs/TECH_STACK.md`
-- `docs/CONFIGURATION.md`
-- `docs/LOGGING.md`
-- `docs/BATCH_FLOW.md`
-- `docs/MIGRATION_SCOPE.md`
-- `docs/FILE_LIFECYCLE_AND_NOTIFICATIONS.md`
-- `docs/LEGACY_PROCESSING_RULES.md`
-- `docs/VALIDATION_AND_NORMALIZATION_RULES.md`
+## Requisitos
+
+- Go `1.26`
+- Acceso a SQL Server
+- Acceso a Products API
+- API key de SendGrid (si notificaciones están habilitadas)
+
+## Configuración inicial
+
+1. Crear archivos reales de configuración a partir de los ejemplos:
+
+```powershell
+Copy-Item config/appsettings.example.toml config/appsettings.toml
+Copy-Item config/.env.example config/.env
+```
+
+2. Completar valores reales en:
+
+- `config/appsettings.toml`
+- `config/.env`
+
+Campos clave esperados:
+
+- SQL Server: `DB_CONNECTION_STRING`
+- API de productos: `PRODUCTS_API_TOKEN`
+- Email: `SENDGRID_API_KEY`
+- Paths batch: `paths.input_root`, `paths.processing_root`, `paths.processed_root`
+
+## Ejecución
+
+### Self-check (recomendado antes de run)
+
+```powershell
+go run ./cmd/StockCentralUploadListProductsV2 self-check --settings config/appsettings.toml --env config/.env
+```
+
+Valida configuración, acceso a filesystem y conectividad SQL.
+
+### Correr batch
+
+```powershell
+go run ./cmd/StockCentralUploadListProductsV2 run --settings config/appsettings.toml --env config/.env
+```
+
+## Scripts auxiliares (PowerShell)
+
+### Build
+
+```powershell
+./scripts/build.ps1
+```
+
+Genera artefacto en `dist/<os>-<arch>/`, copia `config/` y usa `upx` si está disponible.
+
+### Tests
+
+```powershell
+./scripts/test.ps1
+```
+
+Ejecuta `go test -count=1 ./...` y muestra resumen final.
+
+## Documentación funcional y operativa
+
+La carpeta `docs/` es la fuente de verdad funcional para V2:
+
+- `docs/PROCESO_FUNCIONAL_CARGA_PRODUCTOS.md`
+  - proceso de punta a punta orientado a negocio y operación.
+- `docs/V2_PROCESO_HIPERDETALLADO.md`
+  - detalle técnico profundo del comportamiento implementado.
+- `docs/GUIA_CARGA_ARCHIVO_SELLERS.md`
+  - guía para sellers sobre uso de plantillas (formato completo/corto).
+- `docs/TESTS_UNITARIOS.md`
+  - inventario de cobertura de tests unitarios y su objetivo.
+- `docs/DUDAS_A_PLANTEAR.md`
+  - definiciones funcionales pendientes para cerrar alcance.
+- `docs/SQL.md`
+  - índice de scripts SQL nuevos versionados.
+
+Archivos de ejemplo incluidos:
+
+- `docs/EJEMPLO_ARCHIVO_COMPLETO.xlsx`
+- `docs/EJEMPLO_ARCHIVO_STOCK.xlsx`
+
+## SQL versionado
+
+Scripts nuevos del proceso viven en `sql/`.
+
+Actualmente:
+
+- `sql/ProviderCategoryNameToRubroId_Get.sql`
+
+Detalle de SQL en:
+
+- `docs/SQL.md`
+
+## Comandos útiles de desarrollo
+
+```powershell
+go test ./...
+go test ./internal/workbook/...
+go test ./internal/products/...
+go build ./cmd/StockCentralUploadListProductsV2
+```
+
+## Nota de operación
+
+Este proceso está diseñado para ejecución batch no interactiva y alto volumen por archivo.
+
+Si se requiere ejecución periódica, debe resolverse externamente con un scheduler.
