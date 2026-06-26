@@ -2,8 +2,10 @@ package intake
 
 import (
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
+	"strings"
 )
 
 // Este archivo centraliza la lógica de rutas y movimientos de archivos.
@@ -13,6 +15,7 @@ import (
 type Mover struct {
 	processingRoot string
 	processedRoot  string
+	renameFile     func(oldPath, newPath string) error
 }
 
 // NewMover recibe las dos raíces administradas por el batch.
@@ -20,6 +23,7 @@ func NewMover(processingRoot, processedRoot string) *Mover {
 	return &Mover{
 		processingRoot: processingRoot,
 		processedRoot:  processedRoot,
+		renameFile:     os.Rename,
 	}
 }
 
@@ -51,8 +55,8 @@ func (m *Mover) MoveToProcessing(job FileJob) (FileJob, error) {
 	if err := ensureParent(job.ProcessingPath); err != nil {
 		return job, fmt.Errorf("prepare processing destination: %w", err)
 	}
-	// El rename deja el archivo físicamente en la carpeta de trabajo del batch.
-	if err := os.Rename(job.InputPath, job.ProcessingPath); err != nil {
+	// Intentamos primero el camino barato: rename directo.
+	if err := moveFile(job.InputPath, job.ProcessingPath, m.renameFile); err != nil {
 		return job, fmt.Errorf("move file to processing: %w", err)
 	}
 
@@ -68,8 +72,9 @@ func (m *Mover) MoveToProcessed(job FileJob) (FileJob, error) {
 	if err := ensureParent(job.ProcessedPath); err != nil {
 		return job, fmt.Errorf("prepare processed destination: %w", err)
 	}
-	// Este paso cierra el ciclo del archivo y lo saca del directorio temporal.
-	if err := os.Rename(job.InputPath, job.ProcessedPath); err != nil {
+	// Igual que en processing, si no se puede renombrar entre unidades,
+	// hacemos fallback a copiar y borrar.
+	if err := moveFile(job.InputPath, job.ProcessedPath, m.renameFile); err != nil {
 		return job, fmt.Errorf("move file to processed: %w", err)
 	}
 
@@ -86,4 +91,79 @@ func ensureParent(path string) error {
 func stringsTrimExt(name string) string {
 	ext := filepath.Ext(name)
 	return name[:len(name)-len(ext)]
+}
+
+// moveFile intenta primero `rename` y, si el filesystem no permite mover
+// entre volúmenes/unidades, hace fallback a copiar y borrar el origen.
+func moveFile(sourcePath, destinationPath string, renameFile func(oldPath, newPath string) error) error {
+	if err := renameFile(sourcePath, destinationPath); err == nil {
+		return nil
+	} else if !isCrossDeviceMoveError(err) {
+		return err
+	}
+
+	return copyAndRemove(sourcePath, destinationPath)
+}
+
+// isCrossDeviceMoveError detecta mensajes típicos de rename entre volúmenes
+// distintos, tanto en Unix (`cross-device link`) como en Windows
+// (`otra unidad de disco` / `different disk drive`).
+func isCrossDeviceMoveError(err error) bool {
+	if err == nil {
+		return false
+	}
+
+	message := strings.ToLower(err.Error())
+	return strings.Contains(message, "cross-device link") ||
+		strings.Contains(message, "otra unidad de disco") ||
+		strings.Contains(message, "different disk drive")
+}
+
+// copyAndRemove replica un move físico cuando rename no es posible.
+func copyAndRemove(sourcePath, destinationPath string) error {
+	sourceFile, err := os.Open(sourcePath)
+	if err != nil {
+		return fmt.Errorf("open source file: %w", err)
+	}
+	defer func() {
+		_ = sourceFile.Close()
+	}()
+
+	info, err := sourceFile.Stat()
+	if err != nil {
+		return fmt.Errorf("stat source file: %w", err)
+	}
+
+	destinationFile, err := os.Create(destinationPath)
+	if err != nil {
+		return fmt.Errorf("create destination file: %w", err)
+	}
+
+	copyErr := func() error {
+		defer func() {
+			_ = destinationFile.Close()
+		}()
+
+		if _, err := io.Copy(destinationFile, sourceFile); err != nil {
+			return fmt.Errorf("copy file contents: %w", err)
+		}
+		if err := destinationFile.Sync(); err != nil {
+			return fmt.Errorf("sync destination file: %w", err)
+		}
+		if err := os.Chmod(destinationPath, info.Mode()); err != nil {
+			return fmt.Errorf("chmod destination file: %w", err)
+		}
+		return nil
+	}()
+	if copyErr != nil {
+		_ = os.Remove(destinationPath)
+		return copyErr
+	}
+
+	if err := os.Remove(sourcePath); err != nil {
+		_ = os.Remove(destinationPath)
+		return fmt.Errorf("remove source file after copy: %w", err)
+	}
+
+	return nil
 }
