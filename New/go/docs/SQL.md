@@ -2,6 +2,10 @@
 
 Esta seccion documenta los scripts SQL vigentes requeridos por la version V2.
 
+Hoy el repositorio conserva solamente los objetos SQL activos del flujo actual.
+No quedan en esta carpeta scripts legacy de mapping viejo ni scripts auxiliares
+de migracion de datos entre ambientes.
+
 ## Funcion
 
 - `sql/ufnNormalizeCatalogCategoryName.sql`
