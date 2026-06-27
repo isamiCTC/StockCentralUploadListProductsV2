@@ -30,7 +30,9 @@ Para entender una tarea nueva, priorizar:
 - `internal/batch/processor.go`: orquestacion del batch completo.
 - `internal/batch/file_processor.go`: procesamiento de un archivo y sus filas.
 - `internal/workbook/*`: lectura, validacion y mapeo de Excel.
-- `internal/products/*`: cliente de API, producto, imagenes y subcategorias.
+- `internal/integrations/productsapi/*`: cliente de API de productos, upsert e imagenes.
+- `internal/integrations/sqlserver/*`: acceso a SQL Server para providers y categorias.
+- `internal/integrations/sendgrid/*`: cliente concreto de correo.
 - `internal/catalog/*`: resolucion de categoria/subcategoria.
 
 No leer todo el repo por inercia. Seguir las rutas anteriores segun el cambio pedido.
@@ -53,7 +55,8 @@ Usar `go test` directo solo para ciclos puntuales de desarrollo, por ejemplo:
 
 ```powershell
 go test ./internal/workbook/...
-go test ./internal/products/...
+go test ./internal/integrations/productsapi/...
+go test ./internal/integrations/sqlserver/...
 ```
 
 Antes de cerrar cambios de codigo Go, correr `./scripts/test.ps1` siempre que sea viable. Si no se puede correr, decirlo claramente y explicar por que.
@@ -158,18 +161,23 @@ Este es un punto delicado. No cambiarlo por intuicion.
 Regla actual:
 
 - `CATEGORIA` se exige y se conserva, pero la resolucion efectiva se apoya en `SUB CATEGORIA`.
-- Primero se intenta el mapping precargado desde DB con `ProviderCategoryNameToRubroId_Get @ProviderId = 0`.
-- La comparacion contra DB normaliza trim, mayusculas, tildes y espacios internos.
-- Si no hay match en DB, se consulta la API de subcategorias con el valor original de `SUB CATEGORIA`.
-- Si la API no resuelve, se usa el fallback configurado: `catalog.fallback_category_code` y `catalog.fallback_category_name`.
+- Primero se precarga desde SQL Server una cache de ramas validas del catalogo usando `CatalogCategoryBranchLookup_Get @CatalogoId = <catalog_id>`.
+- La comparacion contra esa cache normaliza trim, mayusculas, tildes y espacios internos.
+- Si no hay match en la cache, se usa el fallback configurado: `catalog.fallback_category_code` y `catalog.fallback_category_name`.
 - En la configuracion actual el fallback documentado es `1041 / Varios`.
 
 Caer en fallback no debe convertir la fila en `ERROR` por si solo. Si el producto se impacta, la fila queda `PARTIAL_OK` con observacion de categoria general.
 
+### Diferencia con el legacy
+
+- El legacy mezclaba mapping previo, endpoint de subcategorias y fallback final.
+- La V2 actual ya no consulta el endpoint de subcategorias para clasificar.
+- La V2 resuelve solo contra el catalogo SQL precargado del `catalog_id` configurado y, si no encuentra match, cae al fallback configurado.
+
 Archivos clave:
 
 - `internal/catalog/resolver.go`
-- `internal/catalog/sqlserver_mapping_repository.go`
+- `internal/integrations/sqlserver/category_branch_repository.go`
 - `internal/catalog/normalize.go`
 - `internal/reporting/row_outcome_builder.go`
 
@@ -190,19 +198,11 @@ Stock:
 - `PUT /providers/{providerID}/products/{sku}/`.
 - No crea producto y no hace patch parcial.
 
-Subcategorias:
-
-- `GET /subcategories/{providerID}/{subcategoryName}`.
-- Usa `Authorization` con el token configurado.
-- Espera `200 OK` con lista JSON simple.
-- Toma la primera coincidencia si existe.
-
 Archivos clave:
 
-- `internal/products/client.go`
-- `internal/products/products.go`
-- `internal/products/subcategories.go`
-- `internal/products/dto.go`
+- `internal/integrations/productsapi/client.go`
+- `internal/integrations/productsapi/products.go`
+- `internal/integrations/productsapi/dto.go`
 
 ## Imagenes
 
@@ -224,7 +224,7 @@ Reglas actuales:
 Archivos clave:
 
 - `internal/images/downloader.go`
-- `internal/products/images.go`
+- `internal/integrations/productsapi/images.go`
 - `internal/reporting/row_outcome_builder.go`
 
 ## Resultados y mails
