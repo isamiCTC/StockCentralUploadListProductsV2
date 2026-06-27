@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 )
 
 // Este archivo prueba las reglas de rutas y movimientos del intake.
@@ -26,13 +27,13 @@ func TestBuildPathsPreservesProviderAndRelativeStructure(t *testing.T) {
 	if filepath.ToSlash(got.ProcessingPath) != "C:/processing/342/sub1/sub2/catalog.xlsx" {
 		t.Fatalf("ProcessingPath = %q", filepath.ToSlash(got.ProcessingPath))
 	}
-	if filepath.ToSlash(got.ProcessedPath) != "C:/processed/342/sub1/sub2/catalog.xlsx" {
+	if got.ProcessedPath != "" {
 		t.Fatalf("ProcessedPath = %q", filepath.ToSlash(got.ProcessedPath))
 	}
-	if filepath.ToSlash(got.ResultsPath) != "C:/processed/342/sub1/sub2/catalog.result.xlsx" {
+	if got.ResultsPath != "" {
 		t.Fatalf("ResultsPath = %q", filepath.ToSlash(got.ResultsPath))
 	}
-	if filepath.ToSlash(got.StructureErrPath) != "C:/processed/342/sub1/sub2/catalog.structure-errors.xlsx" {
+	if got.StructureErrPath != "" {
 		t.Fatalf("StructureErrPath = %q", filepath.ToSlash(got.StructureErrPath))
 	}
 }
@@ -53,6 +54,9 @@ func TestMoveToProcessingAndProcessedMovesFileAndUpdatesInputPath(t *testing.T) 
 	}
 
 	mover := NewMover(processingRoot, processedRoot)
+	mover.now = func() time.Time {
+		return time.Date(2026, 6, 26, 14, 35, 22, 0, time.UTC)
+	}
 	job := mover.BuildPaths(FileJob{
 		ProviderID:   342,
 		InputPath:    inputPath,
@@ -80,6 +84,15 @@ func TestMoveToProcessingAndProcessedMovesFileAndUpdatesInputPath(t *testing.T) 
 	if job.InputPath != job.ProcessedPath {
 		t.Fatalf("InputPath after processed = %q, want %q", job.InputPath, job.ProcessedPath)
 	}
+	if filepath.ToSlash(job.ProcessedPath) != filepath.ToSlash(filepath.Join(processedRoot, "342", "catalog__20260626_143522.xlsx")) {
+		t.Fatalf("ProcessedPath = %q", filepath.ToSlash(job.ProcessedPath))
+	}
+	if filepath.ToSlash(job.ResultsPath) != filepath.ToSlash(filepath.Join(processedRoot, "342", "catalog__20260626_143522.result.xlsx")) {
+		t.Fatalf("ResultsPath = %q", filepath.ToSlash(job.ResultsPath))
+	}
+	if filepath.ToSlash(job.StructureErrPath) != filepath.ToSlash(filepath.Join(processedRoot, "342", "catalog__20260626_143522.structure-errors.xlsx")) {
+		t.Fatalf("StructureErrPath = %q", filepath.ToSlash(job.StructureErrPath))
+	}
 	if _, err := os.Stat(job.ProcessedPath); err != nil {
 		t.Fatalf("processed file does not exist: %v", err)
 	}
@@ -104,6 +117,9 @@ func TestMoveToProcessingFallsBackToCopyAndRemoveOnCrossDeviceError(t *testing.T
 	}
 
 	mover := NewMover(processingRoot, processedRoot)
+	mover.now = func() time.Time {
+		return time.Date(2026, 6, 26, 14, 35, 22, 0, time.UTC)
+	}
 	mover.renameFile = func(oldPath, newPath string) error {
 		return errors.New("rename C:\\source D:\\dest: El sistema no puede mover el archivo a otra unidad de disco.")
 	}

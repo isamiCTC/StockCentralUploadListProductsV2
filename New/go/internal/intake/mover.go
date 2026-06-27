@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 )
 
 // Este archivo centraliza la lógica de rutas y movimientos de archivos.
@@ -16,6 +17,7 @@ type Mover struct {
 	processingRoot string
 	processedRoot  string
 	renameFile     func(oldPath, newPath string) error
+	now            func() time.Time
 }
 
 // NewMover recibe las dos raíces administradas por el batch.
@@ -24,6 +26,7 @@ func NewMover(processingRoot, processedRoot string) *Mover {
 		processingRoot: processingRoot,
 		processedRoot:  processedRoot,
 		renameFile:     os.Rename,
+		now:            time.Now,
 	}
 }
 
@@ -34,16 +37,12 @@ func (m *Mover) BuildPaths(job FileJob) FileJob {
 
 	// Conservamos la subestructura relativa del archivo dentro de cada raíz.
 	job.ProcessingPath = filepath.Join(m.processingRoot, providerDir, job.RelativePath)
-	job.ProcessedPath = filepath.Join(m.processedRoot, providerDir, job.RelativePath)
 
-	// A partir del nombre original armamos los nombres de salida que el batch
-	// deja junto al archivo ya procesado.
-	baseName := stringsTrimExt(filepath.Base(job.RelativePath))
-	resultsName := baseName + ".result.xlsx"
-	structureName := baseName + ".structure-errors.xlsx"
-
-	job.ResultsPath = filepath.Join(m.processedRoot, providerDir, filepath.Dir(job.RelativePath), resultsName)
-	job.StructureErrPath = filepath.Join(m.processedRoot, providerDir, filepath.Dir(job.RelativePath), structureName)
+	// Las rutas finales en `processed` se calculan recién al cerrar el archivo
+	// para poder sellarlas con un timestamp real de procesamiento.
+	job.ProcessedPath = ""
+	job.ResultsPath = ""
+	job.StructureErrPath = ""
 
 	return job
 }
@@ -68,6 +67,8 @@ func (m *Mover) MoveToProcessing(job FileJob) (FileJob, error) {
 
 // MoveToProcessed mueve el archivo desde processing hacia processed.
 func (m *Mover) MoveToProcessed(job FileJob) (FileJob, error) {
+	job = m.buildProcessedPaths(job)
+
 	// Igual que en processing, primero garantizamos la carpeta destino.
 	if err := ensureParent(job.ProcessedPath); err != nil {
 		return job, fmt.Errorf("prepare processed destination: %w", err)
@@ -80,6 +81,24 @@ func (m *Mover) MoveToProcessed(job FileJob) (FileJob, error) {
 
 	job.InputPath = job.ProcessedPath
 	return job, nil
+}
+
+// buildProcessedPaths arma las rutas finales usando el nombre original más un
+// timestamp estable para evitar colisiones y mejorar trazabilidad.
+func (m *Mover) buildProcessedPaths(job FileJob) FileJob {
+	providerDir := fmt.Sprintf("%d", job.ProviderID)
+	relativeDir := filepath.Dir(job.RelativePath)
+	originalName := filepath.Base(job.RelativePath)
+	baseName := stringsTrimExt(originalName)
+	extension := filepath.Ext(originalName)
+	timestamp := m.now().Format("20060102_150405")
+	stampedBaseName := baseName + "__" + timestamp
+
+	job.ProcessedPath = filepath.Join(m.processedRoot, providerDir, relativeDir, stampedBaseName+extension)
+	job.ResultsPath = filepath.Join(m.processedRoot, providerDir, relativeDir, stampedBaseName+".result.xlsx")
+	job.StructureErrPath = filepath.Join(m.processedRoot, providerDir, relativeDir, stampedBaseName+".structure-errors.xlsx")
+
+	return job
 }
 
 // ensureParent crea la carpeta padre de una ruta final.
