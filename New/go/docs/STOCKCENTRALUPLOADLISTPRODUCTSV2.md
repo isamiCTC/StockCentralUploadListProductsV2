@@ -1,4 +1,4 @@
-# StockCentralUploadListProductsV2: Informe Hiper Detallado
+# StockCentralUploadListProductsV2
 
 ## Objetivo de este documento
 

@@ -10,6 +10,20 @@ La carpeta para dejar los archivos es:
 Si en vez de eso crean otro provider en `StockCentral_Testing` del server `CTC027`,
 acuérdense de crear también su carpeta con el mismo `providerID`.
 
+Importante:
+para chequear que todo haya quedado bien, la validación final hay que hacerla
+contra la base `StockCentral_Testing`, en ese mismo server.
+
+O sea: no alcanza solo con ver que se tomó el archivo o que llegó el mail.
+También hay que mirar en la base que los datos hayan quedado como se esperaba.
+
+Y otra cosa importante:
+si quieren recibir ustedes el mail de prueba, antes tienen que meterse en SQL y
+poner en el provider el email de ustedes.
+
+Si no hacen eso, el proceso puede andar perfecto igual, pero el correo le va a
+llegar a la dirección que tenga cargada hoy ese provider.
+
 ## Caso 1. Archivo corto normal
 
 Armar un Excel corto con varias filas, por ejemplo 4 o 5 SKUs que ya existan,
@@ -20,6 +34,7 @@ Qué mirar:
 - que procese todas las filas bien;
 - que salga `Resultados`;
 - que el original pase a `processed`.
+- y confirmar en `StockCentral_Testing` que los cambios de stock quedaron bien.
 
 ## Caso 2. Archivo corto mezclado
 
@@ -32,6 +47,7 @@ Qué mirar:
 - que el stock `0` se tome bien;
 - que una fila mala no rompa todo el archivo;
 - que el resultado final muestre qué quedó bien y qué quedó mal.
+- y validar en `StockCentral_Testing` cómo quedó cada fila realmente.
 
 ## Caso 3. Archivo completo para alta
 
@@ -47,6 +63,7 @@ Qué mirar:
 - que tome bien las subcategorías de Club Patagonia;
 - que suba las imágenes;
 - que el resultado quede prolijo.
+- y revisar en `StockCentral_Testing` que el alta haya quedado bien guardada.
 
 ## Caso 4. Archivo completo para actualización
 
@@ -62,6 +79,7 @@ Qué mirar:
 - que actualice bien;
 - que si una imagen falla no tire abajo todo;
 - que si una fila tiene problema quede parcial o en error, pero no frene las otras.
+- y confirmar en `StockCentral_Testing` que los cambios se hayan guardado bien.
 
 ## Caso 5. Archivo roto de estructura
 
@@ -75,6 +93,7 @@ Qué mirar:
 - que genere `ErroresEstructura`;
 - que no genere `Resultados`;
 - que llegue el adjunto correcto si el mail está activo.
+- y en este caso confirmar también en `StockCentral_Testing` que no se haya metido nada que no correspondía.
 
 ## Con esto ya alcanza
 

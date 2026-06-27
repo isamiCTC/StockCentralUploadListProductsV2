@@ -100,14 +100,12 @@ La carpeta `docs/` es la fuente de verdad funcional para V2:
 
 - `docs/PROCESO_FUNCIONAL_CARGA_PRODUCTOS.md`
   - proceso de punta a punta orientado a negocio y operación.
-- `docs/V2_PROCESO_HIPERDETALLADO.md`
+- `docs/STOCKCENTRALUPLOADLISTPRODUCTSV2.md`
   - detalle técnico profundo del comportamiento implementado.
 - `docs/GUIA_CARGA_ARCHIVO_SELLERS.md`
   - guía para sellers sobre uso de plantillas (formato completo/corto).
 - `docs/TESTS_UNITARIOS.md`
   - inventario de cobertura de tests unitarios y su objetivo.
-- `docs/DUDAS_A_PLANTEAR.md`
-  - definiciones funcionales pendientes para cerrar alcance.
 - `docs/SQL.md`
   - índice de scripts SQL nuevos versionados.
 

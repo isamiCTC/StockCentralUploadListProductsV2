@@ -1,12 +1,15 @@
-# Proceso funcional de carga de productos
+# Como funciona la carga de productos
 
-## Objetivo de este documento
+## Para qué sirve este documento
 
-Este documento describe, en un nivel funcional y operativo, cómo funciona hoy el proceso de carga de productos.
+La idea de este documento es explicar, de forma simple, cómo funciona hoy la
+carga de productos.
 
-La intención es dejar documentado el proceso real de punta a punta, pero sin entrar en detalles de código, librerías ni estructura interna de implementación.
+No apunta a explicar código ni detalles técnicos finos. Para eso está el
+documento técnico. Acá la idea es dejar claro qué hace el proceso, qué espera
+y cómo hay que leer los resultados.
 
-En otras palabras, este documento busca responder:
+En concreto, este documento responde:
 
 - qué hace el proceso;
 - qué entradas recibe;
@@ -15,32 +18,35 @@ En otras palabras, este documento busca responder:
 - qué reglas de negocio aplica;
 - qué resultados genera;
 - qué comunicaciones emite;
-- y cómo debe interpretarse cada caso desde negocio y operaciones.
+- y cómo interpretar cada caso desde negocio y operación.
 
-Es un documento interno. Por eso incluye reglas funcionales, criterios operativos, integraciones externas, asuntos de correo, destinatarios, resultados y limitaciones relevantes del proceso.
+Es un documento interno, pensado para que cualquiera que participe del proceso
+pueda entender rápido qué pasa cuando se sube un archivo.
 
 ---
 
-## Qué problema resuelve este proceso
+## Qué resuelve este proceso
 
-El proceso de carga de productos existe para que los sellers puedan informar productos y actualizaciones en forma masiva, mediante archivos Excel, sin depender de una carga manual producto por producto.
+Este proceso existe para que los sellers puedan subir productos o actualizar
+datos en forma masiva usando un Excel, sin depender de una carga manual uno por
+uno.
 
-Desde el punto de vista del negocio, el proceso resuelve cuatro necesidades principales:
+En la práctica, resuelve estas cuatro cosas:
 
 1. publicar productos nuevos;
 2. actualizar información comercial o descriptiva de productos existentes;
 3. actualizar stock en forma simple;
-4. devolver una respuesta clara sobre qué se procesó bien, qué quedó parcial y qué requiere corrección.
+4. devolver una respuesta clara sobre qué salió bien, qué quedó parcial y qué hay que corregir.
 
-También aporta orden operativo porque separa claramente:
+También ordena bastante la operatoria, porque separa bien:
 
 - errores del archivo como archivo;
 - errores de datos de productos;
-- observaciones parciales, por ejemplo vinculadas a imágenes.
+- observaciones parciales, por ejemplo con imágenes.
 
 ---
 
-## Alcance del proceso
+## Qué cubre hoy
 
 Hoy el proceso cubre estos casos:
 
@@ -55,31 +61,32 @@ Hoy el proceso cubre estos casos:
 - validación funcional de cada fila;
 - devolución de resultado por correo.
 
-Y hoy no debe pensarse como un proceso diseñado para:
+Y no está pensado para:
 
 - edición manual interactiva;
 - corrección en vivo dentro de una pantalla;
 - administración visual de catálogo;
-- operación “registro por registro” con intervención humana entre pasos.
+- operación registro por registro con intervención humana entre pasos.
 
-Es un proceso batch, orientado a archivos y a tratamiento masivo.
-
----
-
-## Resultado funcional esperado
-
-El resultado esperado del proceso es uno de estos dos:
-
-- un archivo de resultados por fila, cuando la estructura del archivo fue válida;
-- un archivo de errores estructurales, cuando el problema está en el formato general de la plantilla.
-
-Además, si la configuración de notificaciones está activa y existe un destinatario válido, el proceso envía un correo con el adjunto correspondiente.
+Es un proceso batch, pensado para archivos y volumen.
 
 ---
 
-## Vista general del proceso
+## Qué devuelve el proceso
 
-En una mirada resumida, el proceso hace esto:
+Cuando termina, el proceso deja uno de estos dos resultados:
+
+- un archivo de resultados por fila, si la estructura del archivo estaba bien;
+- un archivo de errores estructurales, si el problema estaba en el formato general de la plantilla.
+
+Además, si las notificaciones están activas y hay destinatarios válidos,
+envía un correo con el adjunto que corresponda.
+
+---
+
+## Vista rápida del flujo
+
+Resumido, el proceso hace esto:
 
 1. identifica qué archivos hay para trabajar;
 2. determina si pertenecen a providers válidos;
@@ -89,12 +96,12 @@ En una mirada resumida, el proceso hace esto:
 6. genera un archivo de salida entendible;
 7. envía un correo con el adjunto correspondiente.
 
-La idea central es que la carga se analiza en dos niveles distintos:
+La idea más importante acá es que la carga se mira en dos niveles:
 
 - nivel archivo;
 - nivel fila.
 
-Ese punto es muy importante.
+Ese punto explica casi todo el comportamiento del proceso.
 
 ## Nivel archivo
 
@@ -116,16 +123,16 @@ En este nivel, el proceso responde:
 - ¿la categoría puede resolverse?
 - ¿las imágenes se pueden tratar?
 
-La combinación de estos dos niveles explica por qué puede ocurrir que:
+La combinación de esos dos niveles explica por qué puede pasar esto:
 
-- un archivo completo sea rechazado por estructura;
-- o que un archivo sea aceptado, pero algunas filas queden en error.
+- un archivo entero sea rechazado por estructura;
+- o que el archivo esté bien, pero algunas filas terminen con error.
 
 ---
 
-## Secuencia funcional completa de un archivo
+## Qué pasa cuando entra un archivo
 
-Más allá del resumen general, la secuencia real de negocio de un archivo es esta:
+Más allá del resumen, este es el recorrido real de un archivo:
 
 1. el proceso detecta un archivo dentro de la carpeta de un provider válido;
 2. asocia ese archivo a ese provider operativo;
@@ -143,9 +150,9 @@ Más allá del resumen general, la secuencia real de negocio de un archivo es es
 14. el archivo original se mueve a `processed`;
 15. si las notificaciones están habilitadas y hay destinatarios, se envía el correo correspondiente.
 
-## Qué significa “cada fila es independiente”
+## Qué significa que cada fila sea independiente
 
-Esto es clave para entender el comportamiento del proceso.
+Esto es clave para entender cómo se comporta el proceso.
 
 Si una fila falla:
 
@@ -153,7 +160,7 @@ Si una fila falla:
 - no invalida por sí sola un archivo estructuralmente correcto;
 - y no impide que otras filas del mismo Excel sí queden `OK`.
 
-Por eso un mismo archivo puede terminar con mezcla de:
+Por eso un mismo archivo puede terminar mezclando:
 
 - filas correctas;
 - filas parciales;
@@ -161,9 +168,9 @@ Por eso un mismo archivo puede terminar con mezcla de:
 
 ---
 
-## Tipos de archivo que acepta el proceso
+## Qué tipos de archivo acepta
 
-Hoy el proceso acepta dos formatos funcionales.
+Hoy el proceso acepta dos formatos.
 
 ## 1. Archivo completo
 
@@ -173,7 +180,7 @@ Este formato se usa cuando el seller necesita:
 - volver a subir una ficha completa;
 - actualizar información general de una publicación existente.
 
-En términos prácticos, este formato cubre cambios sobre:
+En la práctica, este formato sirve para cambiar cosas como:
 
 - nombre;
 - marca;

@@ -10,7 +10,7 @@ Cuando una instruccion de usuario, este archivo y la documentacion entren en ten
 
 1. Instruccion explicita del usuario en la conversacion actual.
 2. Comportamiento real implementado en codigo.
-3. `docs/V2_PROCESO_HIPERDETALLADO.md` como fuente documental principal del comportamiento actual.
+3. `docs/STOCKCENTRALUPLOADLISTPRODUCTSV2.md` como fuente documental principal del comportamiento actual.
 4. `docs/PROCESO_FUNCIONAL_CARGA_PRODUCTOS.md` para lenguaje funcional y operativo.
 5. `docs/GUIA_CARGA_ARCHIVO_SELLERS.md` para lenguaje orientado a sellers.
 6. `README.md`, scripts y tests como soporte operativo.
@@ -22,7 +22,7 @@ Si hay una diferencia entre docs y codigo, no inventar una reconciliacion silenc
 Para entender una tarea nueva, priorizar:
 
 - `README.md`: vista rapida, comandos y estructura.
-- `docs/V2_PROCESO_HIPERDETALLADO.md`: fuente de verdad funcional/tecnica actual.
+- `docs/STOCKCENTRALUPLOADLISTPRODUCTSV2.md`: fuente de verdad funcional/tecnica actual.
 - `docs/PROCESO_FUNCIONAL_CARGA_PRODUCTOS.md`: proceso explicado para negocio y operaciones.
 - `docs/TESTS_UNITARIOS.md`: inventario de cobertura y forma oficial de correr tests.
 - `config/appsettings.toml`: configuracion no sensible actual.
@@ -304,7 +304,7 @@ Preservar la independencia entre filas. Un error de una fila no debe invalidar a
 Cuando modifiques comportamiento:
 
 - Actualizar tests cerca del paquete afectado.
-- Actualizar `docs/V2_PROCESO_HIPERDETALLADO.md` si cambia la fuente de verdad.
+- Actualizar `docs/STOCKCENTRALUPLOADLISTPRODUCTSV2.md` si cambia la fuente de verdad.
 - Actualizar `docs/PROCESO_FUNCIONAL_CARGA_PRODUCTOS.md` si cambia el proceso observable por negocio/operaciones.
 - Actualizar `docs/GUIA_CARGA_ARCHIVO_SELLERS.md` si cambia algo que debe saber el seller.
 - Actualizar `docs/TESTS_UNITARIOS.md` si se agregan, eliminan o cambian tests relevantes.
@@ -312,7 +312,7 @@ Cuando modifiques comportamiento:
 Cuando modifiques solo documentacion:
 
 - Cuidar que la guia para sellers no exponga detalles tecnicos innecesarios.
-- Cuidar que el proceso funcional no contradiga `V2_PROCESO_HIPERDETALLADO.md`.
+- Cuidar que el proceso funcional no contradiga `STOCKCENTRALUPLOADLISTPRODUCTSV2.md`.
 - Mantener lenguaje claro y accionable.
 
 ## Seguridad operativa
@@ -332,11 +332,11 @@ Para validar codigo, preferir unit tests y build.
 
 ## Reglas de documentacion para agentes
 
-- No usar `docs/V2_PROCESO_HIPERDETALLADO.md` como lugar para propuestas futuras: describe lo que aplica hoy.
-- Si algo es una duda o decision pendiente, ponerlo en `docs/DUDAS_A_PLANTEAR.md`.
+- No usar `docs/STOCKCENTRALUPLOADLISTPRODUCTSV2.md` como lugar para propuestas futuras: describe lo que aplica hoy.
+- Si aparece una duda o decision pendiente nueva, documentar la resolucion final en la documentacion vigente o en el sistema de seguimiento que corresponda.
 - Si algo es guia operativa para sellers, usar `docs/GUIA_CARGA_ARCHIVO_SELLERS.md`.
 - Si algo es contrato interno de proceso, usar `docs/PROCESO_FUNCIONAL_CARGA_PRODUCTOS.md`.
-- Si algo es detalle implementado o trazabilidad tecnica, usar `docs/V2_PROCESO_HIPERDETALLADO.md`.
+- Si algo es detalle implementado o trazabilidad tecnica, usar `docs/STOCKCENTRALUPLOADLISTPRODUCTSV2.md`.
 
 ## Checklist antes de cerrar una tarea
 
