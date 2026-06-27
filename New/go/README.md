@@ -122,7 +122,8 @@ Scripts nuevos del proceso viven en `sql/`.
 
 Actualmente:
 
-- `sql/ProviderCategoryNameToRubroId_Get.sql`
+- `sql/CatalogCategoryBranchLookup_Get.sql`
+- `sql/ufnNormalizeCatalogCategoryName.sql`
 
 Detalle de SQL en:
 
@@ -133,7 +134,8 @@ Detalle de SQL en:
 ```powershell
 go test ./...
 go test ./internal/workbook/...
-go test ./internal/products/...
+go test ./internal/integrations/productsapi/...
+go test ./internal/integrations/sqlserver/...
 go build ./cmd/StockCentralUploadListProductsV2
 ```
 

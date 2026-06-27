@@ -1,4 +1,4 @@
-package providers
+package sqlserver
 
 import (
 	"context"
@@ -9,6 +9,7 @@ import (
 	"time"
 
 	appconfig "stockcentraluploadlistproductsv2/internal/config"
+	"stockcentraluploadlistproductsv2/internal/providers"
 )
 
 // Este archivo implementa el repositorio real de providers contra SQL Server.
@@ -16,15 +17,15 @@ import (
 // La lógica replica la intención del legado:
 // ejecutar el stored procedure `ProvidersGetListByEnabledAndIntegratorAndCatalogID`
 // y transformar el resultset en una lista simple de providers válidos.
-type SQLServerRepository struct {
+type ProvidersRepository struct {
 	server          *SQLServer
 	providersSPName string
 }
 
-// NewSQLServerRepository recibe la conexión ya abierta y el nombre del SP
+// NewProvidersRepository recibe la conexión ya abierta y el nombre del SP
 // desde configuración.
-func NewSQLServerRepository(server *SQLServer, cfg appconfig.DatabaseConfig) *SQLServerRepository {
-	return &SQLServerRepository{
+func NewProvidersRepository(server *SQLServer, cfg appconfig.DatabaseConfig) *ProvidersRepository {
+	return &ProvidersRepository{
 		server:          server,
 		providersSPName: cfg.ProvidersSPName,
 	}
@@ -35,7 +36,7 @@ func NewSQLServerRepository(server *SQLServer, cfg appconfig.DatabaseConfig) *SQ
 // En vez de depender de posiciones fijas del resultset, busca las columnas
 // `ID`, `Name` y opcionalmente `Email` por nombre. Eso hace la lectura un poco
 // más robusta frente a cambios menores en el orden de columnas.
-func (r *SQLServerRepository) ListEnabledByIntegratorAndCatalog(ctx context.Context, integratorID, catalogID int) ([]Provider, error) {
+func (r *ProvidersRepository) ListEnabledByIntegratorAndCatalog(ctx context.Context, integratorID, catalogID int) ([]providers.Provider, error) {
 	// Ejecutamos el SP de forma explícita para dejar visible qué parámetros
 	// salen desde la aplicación.
 	queryCtx, cancel := context.WithTimeout(ctx, time.Duration(r.server.timeoutSeconds)*time.Second)
@@ -83,26 +84,26 @@ func (r *SQLServerRepository) ListEnabledByIntegratorAndCatalog(ctx context.Cont
 	}
 
 	// Recorremos todas las filas y las convertimos al modelo mínimo del dominio.
-	var providers []Provider
+	var providerList []providers.Provider
 	for rows.Next() {
 		// Cada fila del resultset representa un provider elegible.
 		provider, scanErr := scanProviderRow(rows, idIndex, nameIndex, emailIndex, len(columns))
 		if scanErr != nil {
 			return nil, scanErr
 		}
-		providers = append(providers, provider)
+		providerList = append(providerList, provider)
 	}
 
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("iterate provider rows: %w", err)
 	}
 
-	return providers, nil
+	return providerList, nil
 }
 
 // scanProviderRow toma una fila ya posicionada y extrae `ID`, `Name` y
 // opcionalmente `Email`. El resto de columnas del SP se ignora.
-func scanProviderRow(rows *sql.Rows, idIndex, nameIndex, emailIndex, columnsCount int) (Provider, error) {
+func scanProviderRow(rows *sql.Rows, idIndex, nameIndex, emailIndex, columnsCount int) (providers.Provider, error) {
 	rawValues := make([]sql.RawBytes, columnsCount)
 	destinations := make([]any, columnsCount)
 	for i := range rawValues {
@@ -112,12 +113,12 @@ func scanProviderRow(rows *sql.Rows, idIndex, nameIndex, emailIndex, columnsCoun
 	}
 
 	if err := rows.Scan(destinations...); err != nil {
-		return Provider{}, fmt.Errorf("scan provider row: %w", err)
+		return providers.Provider{}, fmt.Errorf("scan provider row: %w", err)
 	}
 
 	providerID, err := strconv.Atoi(strings.TrimSpace(string(rawValues[idIndex])))
 	if err != nil {
-		return Provider{}, fmt.Errorf("parse provider ID: %w", err)
+		return providers.Provider{}, fmt.Errorf("parse provider ID: %w", err)
 	}
 
 	providerEmail := ""
@@ -126,7 +127,7 @@ func scanProviderRow(rows *sql.Rows, idIndex, nameIndex, emailIndex, columnsCoun
 	}
 
 	// El dominio de batch solo necesita ID, nombre y email.
-	return Provider{
+	return providers.Provider{
 		ID:    providerID,
 		Name:  strings.TrimSpace(string(rawValues[nameIndex])),
 		Email: providerEmail,

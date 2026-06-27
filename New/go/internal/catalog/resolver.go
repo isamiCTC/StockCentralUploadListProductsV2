@@ -3,68 +3,57 @@ package catalog
 import (
 	"context"
 
-	"stockcentraluploadlistproductsv2/internal/products"
+	productsapi "stockcentraluploadlistproductsv2/internal/integrations/productsapi"
 )
 
 // Este archivo implementa la resolución de categoría/subcategoría.
 //
-// Orden respetado del legacy:
-// 1. usar el mapping precargado desde la DB
-// 2. si no matchea, consultar la API de subcategorías
-// 3. si tampoco resuelve, usar "Varios" (1041)
+// Regla vigente:
+// 1. usar el catálogo precargado desde SQL Server;
+// 2. si no matchea, usar la categoría general configurada.
 
 type ResolutionSource string
 
 const (
 	ResolutionSourceDatabase ResolutionSource = "DATABASE"
-	ResolutionSourceAPI      ResolutionSource = "API"
 	ResolutionSourceFallback ResolutionSource = "FALLBACK"
 )
 
 type ResolutionResult struct {
-	Branch products.CategoryBranch
+	Branch productsapi.CategoryBranch
 	Source ResolutionSource
 }
 
 type Resolver struct {
-	client      *products.Client
-	branchByKey map[string]products.CategoryBranch
-	fallback    products.CategoryBranch
+	branchByKey map[string]productsapi.CategoryBranch
+	fallback    productsapi.CategoryBranch
 }
 
 // NewResolver construye el resolvedor de categorías.
-func NewResolver(client *products.Client, branchByKey map[string]products.CategoryBranch, fallback products.CategoryBranch) *Resolver {
+func NewResolver(branchByKey map[string]productsapi.CategoryBranch, fallback productsapi.CategoryBranch) *Resolver {
 	if branchByKey == nil {
-		branchByKey = make(map[string]products.CategoryBranch)
+		branchByKey = make(map[string]productsapi.CategoryBranch)
 	}
 
 	return &Resolver{
-		client:      client,
 		branchByKey: branchByKey,
 		fallback:    fallback,
 	}
 }
 
-// ResolveBySubcategory aplica la cadena completa de resolución.
+// ResolveBySubcategory resuelve contra el catálogo precargado y, si no
+// encuentra match, cae a la categoría general configurada.
 func (r *Resolver) ResolveBySubcategory(ctx context.Context, providerID int, subcategory string) (ResolutionResult, error) {
-	// Primer intento: mapping precargado desde la DB, sin salir a la red.
-	if branch, ok := r.branchByKey[normalizeCategoryKey(subcategory)]; ok {
+	_ = ctx
+	_ = providerID
+
+	if branch, ok := r.branchByKey[NormalizeCategoryKey(subcategory)]; ok {
 		return ResolutionResult{
 			Branch: branch,
 			Source: ResolutionSourceDatabase,
 		}, nil
 	}
 
-	// Segundo intento: preguntar a la API por la primera coincidencia útil.
-	branch, _, err := r.client.ResolveFirstSubcategory(ctx, providerID, subcategory)
-	if err == nil && branch != nil {
-		return ResolutionResult{
-			Branch: *branch,
-			Source: ResolutionSourceAPI,
-		}, nil
-	}
-
-	// Último recurso: mandar todo a la categoría comodín "Varios".
 	return ResolutionResult{
 		Branch: r.fallback,
 		Source: ResolutionSourceFallback,

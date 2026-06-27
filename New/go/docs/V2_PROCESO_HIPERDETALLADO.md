@@ -71,10 +71,10 @@ El flujo principal de V2 se reparte entre estos archivos:
 
 ### Providers y filesystem
 
-9. `internal/providers/sqlserver.go`
+9. `internal/integrations/sqlserver/client.go`
    Conexión base a SQL Server.
 
-10. `internal/providers/sqlserver_repository.go`
+10. `internal/integrations/sqlserver/providers_repository.go`
    Ejecución del SP de providers y mapping del resultset.
 
 11. `internal/intake/scanner.go`
@@ -102,26 +102,23 @@ El flujo principal de V2 se reparte entre estos archivos:
 
 ### API de productos y categorías
 
-18. `internal/products/client.go`
-    Cliente base REST.
+18. `internal/integrations/productsapi/client.go`
+   Cliente base REST.
 
-19. `internal/products/products.go`
-    Operaciones de producto y upsert legacy.
+19. `internal/integrations/productsapi/products.go`
+   Operaciones de producto y upsert legacy.
 
-20. `internal/products/images.go`
-    Sincronización legacy de imágenes.
+20. `internal/integrations/productsapi/images.go`
+   Sincronización legacy de imágenes.
 
-21. `internal/products/subcategories.go`
-    Fallback REST de subcategorías.
-
-22. `internal/catalog/resolver.go`
+21. `internal/catalog/resolver.go`
     Resolución de categoría a partir de subcategoría.
 
-23. `internal/catalog/sqlserver_mapping_repository.go`
-    Carga desde SQL Server el mapping `ProviderCategoryName -> RubroId`.
+22. `internal/integrations/sqlserver/category_branch_repository.go`
+    Carga desde SQL Server las ramas válidas de categoría para el catálogo configurado.
 
-24. `internal/catalog/normalize.go`
-    Normalización laxa usada para comparar subcategorías contra el mapping cargado desde DB.
+23. `internal/catalog/normalize.go`
+    Normalización laxa usada para comparar subcategorías contra la cache cargada desde DB.
 
 ### Imágenes, resultados, mails y logs
 
@@ -143,7 +140,7 @@ El flujo principal de V2 se reparte entre estos archivos:
 30. `internal/notifications/recipients.go`
     Resolución de destinatarios.
 
-31. `internal/notifications/sendgrid.go`
+31. `internal/integrations/sendgrid/client.go`
     Cliente concreto de SendGrid, el servicio externo usado para enviar mails.
 
 32. `internal/logging/logger.go`
@@ -164,7 +161,7 @@ Hoy la V2 hace esto:
 4. si se ejecuta `run`, carga TOML y `.env`;
 5. inicializa logging;
 6. arma el runtime del batch desde `internal/app/runbatch/runtime.go`;
-7. carga desde SQL Server el mapping global de categorías;
+7. carga desde SQL Server las ramas válidas de categoría del catálogo;
 8. ejecuta el SP de providers habilitados;
 9. descubre archivos `.xlsx` únicamente dentro de carpetas válidas de providers;
 10. arma un `FileJob` por archivo;
@@ -259,7 +256,7 @@ Cuando se elige `run`, la secuencia es:
 3. inicializa logging;
 4. llama a `runbatch.BuildBatch(cfg, logs)`;
 5. dentro de ese runtime se abre SQL Server;
-6. se cargan desde SQL Server los mappings globales de categoría usando `ProviderCategoryNameToRubroId_Get @ProviderId = 0`;
+6. se cargan desde SQL Server las ramas válidas de categoría usando `CatalogCategoryBranchLookup_Get @CatalogoId = <catalog_id>`;
 7. se construyen repositorio de providers, scanner, reader de Excel, client de productos, resolver de categorías, downloader de imágenes, mover, servicio de notificaciones y writer de resultados;
 8. se construye `FileProcessor`;
 9. se construye `Processor`;
@@ -374,7 +371,7 @@ Según el TOML actual:
 - `stop_on_file_error = false`
 - `row_workers = 5`
 - `row_timeout_seconds = 120`
-- `category_mappings_sp_name = ProviderCategoryNameToRubroId_Get`
+- `category_mappings_sp_name = CatalogCategoryBranchLookup_Get`
 - `fallback_category_code = 1041`
 - `fallback_category_name = Varios`
 
@@ -1497,29 +1494,28 @@ Esto vive en `catalog/resolver.go`.
 
 ### Orden de resolución
 
-1. mapping precargado desde SQL Server;
-2. API de subcategorías;
-3. fallback configurado en TOML.
+1. catálogo precargado desde SQL Server;
+2. fallback configurado en TOML.
 
-### Mapping desde SQL Server
+### Catálogo precargado desde SQL Server
 
-La carga vive en `sqlserver_mapping_repository.go`.
+La carga vive en `internal/integrations/sqlserver/category_branch_repository.go`.
 
 El runtime ejecuta:
 
-- `ProviderCategoryNameToRubroId_Get`
-- con `@ProviderId = 0`
+- `CatalogCategoryBranchLookup_Get`
+- con `@CatalogoId = <catalog_id>`
 
 Y construye una cache en memoria:
 
-- clave normalizada: `ProviderCategoryName`
-- valor final: `products.CategoryBranch{Code: rubroId, Name: ProviderCategoryName}`
+- clave normalizada: `NormalizedName`
+- valor final: `productsapi.CategoryBranch{Code: Code, Name: Name}`
 
 Esa cache se construye una sola vez al arrancar el batch y luego se reutiliza fila por fila.
 
-### Diferencia menor respecto del legacy
+### Normalización
 
-La comparación contra el mapping cargado desde DB usa una normalización propia de `catalog/normalize.go`.
+La comparación contra la cache cargada desde DB usa una normalización propia de `catalog/normalize.go`.
 
 Esa normalización aplica:
 
@@ -1528,7 +1524,7 @@ Esa normalización aplica:
 - remoción de tildes
 - colapso de espacios internos
 
-Eso permite que el match del mapping tolere variaciones de carga como:
+Eso permite que el match tolere variaciones de carga como:
 
 - `CLIMATIZACIÓN`
 - `climatizacion`
@@ -1536,30 +1532,29 @@ Eso permite que el match del mapping tolere variaciones de carga como:
 
 sin alterar el valor original que vino del Excel.
 
-La idea es conservar la flexibilidad práctica del legacy, pero sin dejar el conocimiento embebido en código.
-
-### Fallback a API
-
-Si no hay match en la cache de DB:
-
-- llama `ResolveFirstSubcategory`;
-- usa el valor original de `SUB CATEGORIA`, no la versión normalizada;
-- que a su vez hace `GET {base_url}/subcategories/{providerID}/{texto}`;
-- si la API devuelve al menos un item, toma el primero.
-
 ### Fallback final
 
-Si tampoco resuelve por API:
+Si no hay match en la cache de DB:
 
 - usa la rama configurada en:
   - `catalog.fallback_category_code`
   - `catalog.fallback_category_name`
 
-### Diferencia importante respecto del legacy
+### Diferencia explícita respecto del legacy
 
-En el legacy, un error en la consulta de API de subcategorías quedaba más mezclado con logging y luego terminaba en una categoría comodín.
+El legacy resolvía subcategorías con más capas:
 
-En V2, el resolvedor también cae al fallback configurado si la API no resuelve, manteniendo el espíritu práctico del proceso histórico pero evitando dejar ese dato hardcodeado.
+1. mappings previos;
+2. consulta al endpoint de subcategorías;
+3. categoría comodín final.
+
+La V2 actual cambió ese criterio:
+
+1. precarga desde SQL Server el catálogo real válido para el `catalog_id` configurado;
+2. compara `SUB CATEGORIA` contra ese dataset;
+3. si no encuentra match, cae directamente al fallback configurado.
+
+La V2 ya no consulta el endpoint de subcategorías para clasificar.
 
 ---
 
@@ -1599,13 +1594,11 @@ configurado:
 - `/providers/{providerID}/products/{sku}/`
 - `/providers/{providerID}/products/{sku}/images/{index}`
 - `/providers/{providerID}/products/{sku}/images`
-- `/subcategories/{providerID}/{subcategoryName}`
 
 Eso permite que `base_url` incluya el prefijo completo de la API. Por ejemplo:
 
 - si `base_url = https://ctcoffice.com.ar:27443/Mp_ProductsAPI_CTC`
 - la URL efectiva de producto queda `https://ctcoffice.com.ar:27443/Mp_ProductsAPI_CTC/providers/{providerID}/products`
-- y la URL efectiva de subcategorías queda `https://ctcoffice.com.ar:27443/Mp_ProductsAPI_CTC/subcategories/{providerID}/{subcategoryName}`
 
 ---
 
@@ -2154,13 +2147,13 @@ Y se elimina el formato muerto de 5 columnas.
 
 No desde `CATEGORIA`.
 
-### 7. Mapping de subcategorías precargado desde DB
+### 7. Catálogo de subcategorías precargado desde DB
 
-Se mantiene la lógica de resolución temprana, pero ya no con un mapa embebido en el código.
+Se mantiene la lógica de resolución temprana, pero ahora sale directamente del catálogo SQL válido para el `catalog_id`.
 
-### 8. Fallback a endpoint de subcategorías
+### 8. Sin fallback a endpoint de subcategorías
 
-También se conserva.
+La V2 actual ya no depende de ese endpoint para resolver clasificación.
 
 ### 9. Fallback final de categoría por configuración
 
@@ -2288,7 +2281,7 @@ Esta es la secuencia end-to-end real de la V2 hoy:
 6. valida configuración mínima;
 7. levanta `summary` y `detail`;
 8. abre SQL Server y hace ping;
-9. carga desde SQL Server el mapping global de categorías con `ProviderCategoryNameToRubroId_Get @ProviderId = 0`;
+9. carga desde SQL Server las ramas válidas de categoría con `CatalogCategoryBranchLookup_Get @CatalogoId = <catalog_id>`;
 10. crea repositorio de providers;
 11. ejecuta el SP de providers habilitados;
 12. ordena providers por ID;
@@ -2323,12 +2316,11 @@ Esta es la secuencia end-to-end real de la V2 hoy:
 41. si es full import:
 42. resuelve categoría desde subcategoría;
 43. primero intenta la cache cargada desde DB;
-44. si no matchea, consulta la API de subcategorías;
-45. si tampoco resuelve, usa el fallback configurado;
-46. arma payload API;
-47. loguea `product-request` en debug;
-48. intenta `PUT`;
-49. si la API dice `Producto inexistente`, hace `POST`;
+44. si no matchea, usa el fallback configurado;
+45. arma payload API;
+46. loguea `product-request` en debug;
+47. intenta `PUT`;
+48. si la API dice `Producto inexistente`, hace `POST`;
 50. loguea `product-response` en debug;
 51. si imágenes globales están desactivadas, termina la fila como `OK`;
 52. si la fila no trajo URLs válidas, termina la fila como `OK`;

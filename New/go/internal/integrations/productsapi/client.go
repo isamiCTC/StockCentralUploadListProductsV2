@@ -1,4 +1,4 @@
-package products
+package productsapi
 
 import (
 	"context"
@@ -69,9 +69,4 @@ func (c *Client) providerProductImagePath(providerID int, sku string, index int)
 // providerProductImagesPath devuelve la ruta de creación de imágenes.
 func (c *Client) providerProductImagesPath(providerID int, sku string) string {
 	return fmt.Sprintf("/providers/%d/products/%s/images", providerID, sku)
-}
-
-// subcategoriesPath devuelve la ruta de búsqueda de subcategoría por texto.
-func (c *Client) subcategoriesPath(providerID int, subcategoryName string) string {
-	return fmt.Sprintf("/subcategories/%d/%s", providerID, subcategoryName)
 }

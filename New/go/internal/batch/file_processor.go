@@ -11,10 +11,10 @@ import (
 
 	"stockcentraluploadlistproductsv2/internal/catalog"
 	"stockcentraluploadlistproductsv2/internal/images"
+	productsapi "stockcentraluploadlistproductsv2/internal/integrations/productsapi"
 	"stockcentraluploadlistproductsv2/internal/intake"
 	"stockcentraluploadlistproductsv2/internal/logging"
 	"stockcentraluploadlistproductsv2/internal/notifications"
-	"stockcentraluploadlistproductsv2/internal/products"
 	"stockcentraluploadlistproductsv2/internal/reporting"
 	"stockcentraluploadlistproductsv2/internal/results"
 	"stockcentraluploadlistproductsv2/internal/workbook"
@@ -42,7 +42,7 @@ type FileProcessor struct {
 	catalogResolver *catalog.Resolver
 	excelReader     *workbook.Reader
 	imageDownloader *images.Downloader
-	productsClient  *products.Client
+	productsClient  *productsapi.Client
 	mover           *intake.Mover
 	notifier        *notifications.Service
 	resultsWriter   *results.Writer
@@ -57,7 +57,7 @@ func NewFileProcessor(
 	catalogResolver *catalog.Resolver,
 	excelReader *workbook.Reader,
 	imageDownloader *images.Downloader,
-	productsClient *products.Client,
+	productsClient *productsapi.Client,
 	mover *intake.Mover,
 	notifier *notifications.Service,
 	resultsWriter *results.Writer,
@@ -678,7 +678,7 @@ func (p *FileProcessor) processFullImportRow(ctx context.Context, providerID int
 		logging.String("category_name", resolution.Branch.Name),
 	)
 
-	input := products.ProductInput{
+	input := productsapi.ProductInput{
 		SKU:              row.FullImport.SKU,
 		Name:             row.FullImport.Name,
 		Brand:            row.FullImport.Brand,

@@ -149,7 +149,7 @@ processed_root = "C:/processed"
 [database]
 timeout_seconds = 30
 providers_sp_name = "ProvidersGetListByEnabledAndIntegratorAndCatalogID"
-category_mappings_sp_name = "ProviderCategoryNameToRubroId_Get"
+category_mappings_sp_name = "CatalogCategoryBranchLookup_Get"
 
 [catalog]
 fallback_category_code = "1041"

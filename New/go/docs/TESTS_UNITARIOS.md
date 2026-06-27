@@ -49,7 +49,8 @@ Si querés correr solo un paquete:
 
 ```bash
 go test ./internal/workbook/...
-go test ./internal/products/...
+go test ./internal/integrations/productsapi/...
+go test ./internal/integrations/sqlserver/...
 ```
 
 ---
@@ -67,8 +68,8 @@ Están concentrados en estas áreas:
 - `internal/intake`
 - `internal/logging`
 - `internal/notifications`
-- `internal/products`
-- `internal/providers`
+- `internal/integrations/productsapi`
+- `internal/integrations/sqlserver`
 - `internal/reporting`
 - `internal/results`
 - `internal/workbook`
@@ -221,37 +222,30 @@ Archivo: `internal/catalog/resolver_test.go`
 
 Qué prueba:
 
-- que la resolución desde el mapping precargado de DB soporte normalización laxa.
+- que la resolución desde la cache precargada del catálogo soporte normalización laxa.
 
 Qué valida:
 
 - tolerancia a mayúsculas, tildes y espacios internos;
-- que no haga falta salir a la API cuando el mapping local ya alcanza.
+- que no haga falta ninguna consulta adicional cuando la cache local ya alcanza.
 
 Por qué importa:
 
 - protege el primer nivel de resolución de categorías.
 
-### `TestResolveBySubcategoryCallsAPIWithOriginalValueWhenDatabaseMappingDoesNotMatch`
+### `TestResolveBySubcategoryFallsBackWhenDatabaseMappingDoesNotMatch`
 
 Qué prueba:
 
-- el fallback a la API de subcategorías cuando el mapping local no encuentra match.
+- el fallback final cuando no hay match en la cache del catálogo.
 
 Qué valida:
 
-- que la búsqueda use el valor original;
-- que el resultado venga desde la API cuando corresponde.
+- que el resolvedor devuelva la categoría general configurada.
 
 Por qué importa:
 
-- protege el segundo escalón de resolución acordado para categorías.
-
-### `TestResolveBySubcategoryFallsBackWhenAPIHasNoMatches`
-
-Qué prueba:
-
-- el fallback final cuando tampoco hay match por API.
+- protege la continuidad de la resolución aunque no exista match.
 
 Qué valida:
 
@@ -470,9 +464,9 @@ Por qué importa:
 
 ---
 
-## `internal/products`
+## `internal/integrations/productsapi`
 
-Archivo: `internal/products/products_test.go`
+Archivo: `internal/integrations/productsapi/products_test.go`
 
 ### `TestUpsertProductLegacyCreatesWhenProductDoesNotExist`
 
@@ -508,7 +502,7 @@ Por qué importa:
 
 - evita falsos positivos de “producto creado” cuando la API realmente falló.
 
-Archivo: `internal/products/images_test.go`
+Archivo: `internal/integrations/productsapi/images_test.go`
 
 ### `TestSyncImageLegacySkipsWhenBase64IsEqual`
 
@@ -740,9 +734,9 @@ Por qué importa:
 
 - mantiene compatibilidad entre Linux/macOS y visores simples de Windows.
 
-## `internal/providers`
+## `internal/integrations/sqlserver`
 
-Archivo: `internal/providers/sqlserver_test.go`
+Archivo: `internal/integrations/sqlserver/client_test.go`
 
 ### `TestQueryContextKeepsRowsUsableAfterReturn`
 

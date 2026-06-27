@@ -1,4 +1,4 @@
-package products
+package productsapi
 
 // Este archivo modela las respuestas mínimas que necesitamos interpretar
 // desde la API legacy.

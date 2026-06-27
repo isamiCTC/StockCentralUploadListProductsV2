@@ -11,8 +11,8 @@ import (
 	"stockcentraluploadlistproductsv2/internal/catalog"
 	appconfig "stockcentraluploadlistproductsv2/internal/config"
 	"stockcentraluploadlistproductsv2/internal/images"
+	productsapi "stockcentraluploadlistproductsv2/internal/integrations/productsapi"
 	"stockcentraluploadlistproductsv2/internal/logging"
-	"stockcentraluploadlistproductsv2/internal/products"
 	"stockcentraluploadlistproductsv2/internal/reporting"
 	"stockcentraluploadlistproductsv2/internal/workbook"
 )
@@ -74,7 +74,7 @@ func TestProcessMappedRowsMarksStockRowAsErrorWhenRowTimeoutExpires(t *testing.T
 	}))
 	defer server.Close()
 
-	client := products.NewClient(appconfig.ProductsAPIConfig{
+	client := productsapi.NewClient(appconfig.ProductsAPIConfig{
 		BaseURL:        server.URL,
 		ProviderName:   "CTC",
 		TimeoutSeconds: 5,
@@ -130,7 +130,7 @@ func TestProcessStockUpdateRowHumanizesAPIErrorDetail(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client := products.NewClient(appconfig.ProductsAPIConfig{
+	client := productsapi.NewClient(appconfig.ProductsAPIConfig{
 		BaseURL:        server.URL,
 		ProviderName:   "CTC",
 		TimeoutSeconds: 5,
@@ -184,7 +184,7 @@ func TestProcessFullImportRowMarksPartialWhenTimeoutExpiresDuringImages(t *testi
 	}))
 	defer imageServer.Close()
 
-	client := products.NewClient(appconfig.ProductsAPIConfig{
+	client := productsapi.NewClient(appconfig.ProductsAPIConfig{
 		BaseURL:        apiServer.URL,
 		ProviderName:   "CTC",
 		TimeoutSeconds: 5,
@@ -194,9 +194,9 @@ func TestProcessFullImportRowMarksPartialWhenTimeoutExpiresDuringImages(t *testi
 		rowWorkers: 1,
 		rowTimeout: 250 * time.Millisecond,
 		syncImages: true,
-		catalogResolver: catalog.NewResolver(client, map[string]products.CategoryBranch{
+		catalogResolver: catalog.NewResolver(map[string]productsapi.CategoryBranch{
 			"CELULARES": {Code: "1217", Name: "Telefonía y Accesorios"},
-		}, products.CategoryBranch{Code: "1041", Name: "Varios"}),
+		}, productsapi.CategoryBranch{Code: "1041", Name: "Varios"}),
 		imageDownloader: images.NewDownloader(5 * time.Second),
 		productsClient:  client,
 		logs:            discardLoggerSet(),
@@ -255,8 +255,6 @@ func TestProcessFullImportRowMarksPartialWhenCategoryFallsBack(t *testing.T) {
 	apiServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		switch r.Method {
-		case http.MethodGet:
-			_, _ = w.Write([]byte(`[]`))
 		case http.MethodPut:
 			_, _ = w.Write([]byte(`{}`))
 		default:
@@ -265,7 +263,7 @@ func TestProcessFullImportRowMarksPartialWhenCategoryFallsBack(t *testing.T) {
 	}))
 	defer apiServer.Close()
 
-	client := products.NewClient(appconfig.ProductsAPIConfig{
+	client := productsapi.NewClient(appconfig.ProductsAPIConfig{
 		BaseURL:        apiServer.URL,
 		ProviderName:   "CTC",
 		TimeoutSeconds: 5,
@@ -275,7 +273,7 @@ func TestProcessFullImportRowMarksPartialWhenCategoryFallsBack(t *testing.T) {
 		rowWorkers: 1,
 		rowTimeout: 250 * time.Millisecond,
 		syncImages: false,
-		catalogResolver: catalog.NewResolver(client, nil, products.CategoryBranch{
+		catalogResolver: catalog.NewResolver(nil, productsapi.CategoryBranch{
 			Code: "1041",
 			Name: "Varios",
 		}),

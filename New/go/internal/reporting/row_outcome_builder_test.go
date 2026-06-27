@@ -70,7 +70,7 @@ func TestBuildFullImportPresentationReturnsPartialForFallbackCategory(t *testing
 func TestBuildFullImportPresentationReturnsPartialForInterruptedImages(t *testing.T) {
 	t.Parallel()
 
-	got := BuildFullImportPresentation("UPDATE", catalog.ResolutionSourceAPI, true, ImageSyncFacts{
+	got := BuildFullImportPresentation("UPDATE", catalog.ResolutionSourceDatabase, true, ImageSyncFacts{
 		UpdatedCount: 1,
 	}, context.DeadlineExceeded)
 

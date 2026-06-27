@@ -1,4 +1,4 @@
-package providers
+package sqlserver
 
 import (
 	"context"
@@ -21,9 +21,9 @@ type SQLServer struct {
 	timeoutSeconds int
 }
 
-// NewSQLServer abre la conexión y hace un ping inicial.
+// NewClient abre la conexión y hace un ping inicial.
 // Si el ping falla, devolvemos error y cerramos inmediatamente el handle.
-func NewSQLServer(cfg appconfig.DatabaseConfig, connectionString string) (*SQLServer, error) {
+func NewClient(cfg appconfig.DatabaseConfig, connectionString string) (*SQLServer, error) {
 	// `sql.Open` no valida conectividad todavía; solo arma el handle.
 	database, err := sql.Open("sqlserver", connectionString)
 	if err != nil {

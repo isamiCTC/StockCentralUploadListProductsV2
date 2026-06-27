@@ -1,4 +1,4 @@
-package products
+package productsapi
 
 // Este archivo define los DTOs principales usados para hablar con la API
 // de productos respetando el contrato observado en el servicio legacy.
@@ -6,7 +6,6 @@ package products
 // Acá modelamos solo lo que la V2 realmente necesita hoy para:
 // - consultar productos
 // - crear o actualizar productos
-// - resolver subcategorías
 // - sincronizar imágenes
 
 // Product representa el payload principal de producto usado por el legacy.
@@ -43,10 +42,4 @@ type CategoryBranch struct {
 // ProductImage es el payload de imágenes observado en el legacy.
 type ProductImage struct {
 	Base64 string `json:"Base64"`
-}
-
-// Subcategory representa el item devuelto por el endpoint de subcategorías.
-type Subcategory struct {
-	ID   string `json:"ID"`
-	Name string `json:"Name"`
 }

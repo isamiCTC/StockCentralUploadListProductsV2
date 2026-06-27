@@ -7,7 +7,7 @@ import (
 	"path/filepath"
 
 	appconfig "stockcentraluploadlistproductsv2/internal/config"
-	"stockcentraluploadlistproductsv2/internal/providers"
+	"stockcentraluploadlistproductsv2/internal/integrations/sqlserver"
 )
 
 // Este archivo implementa el modo `--self-check`.
@@ -243,7 +243,7 @@ func validateLoggingConfig(cfg appconfig.LoggingConfig) error {
 
 // ensureSQLServerConnection intenta abrir la conexión real a SQL Server.
 func ensureSQLServerConnection(cfg appconfig.Config) error {
-	server, err := providers.NewSQLServer(cfg.Database, cfg.Secrets.DBConnectionString)
+	server, err := sqlserver.NewClient(cfg.Database, cfg.Secrets.DBConnectionString)
 	if err != nil {
 		return err
 	}

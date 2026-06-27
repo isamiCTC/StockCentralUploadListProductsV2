@@ -9,11 +9,12 @@ import (
 	"stockcentraluploadlistproductsv2/internal/catalog"
 	appconfig "stockcentraluploadlistproductsv2/internal/config"
 	"stockcentraluploadlistproductsv2/internal/images"
+	productsapi "stockcentraluploadlistproductsv2/internal/integrations/productsapi"
+	"stockcentraluploadlistproductsv2/internal/integrations/sendgrid"
+	"stockcentraluploadlistproductsv2/internal/integrations/sqlserver"
 	"stockcentraluploadlistproductsv2/internal/intake"
 	"stockcentraluploadlistproductsv2/internal/logging"
 	"stockcentraluploadlistproductsv2/internal/notifications"
-	"stockcentraluploadlistproductsv2/internal/products"
-	"stockcentraluploadlistproductsv2/internal/providers"
 	"stockcentraluploadlistproductsv2/internal/reporting"
 	"stockcentraluploadlistproductsv2/internal/results"
 	"stockcentraluploadlistproductsv2/internal/workbook"
@@ -46,7 +47,7 @@ func (r BatchRuntime) Close() error {
 // BuildBatch arma todas las dependencias concretas del modo batch.
 func BuildBatch(cfg appconfig.Config, logs logging.LoggerSet) (BatchRuntime, error) {
 	// La conexión a SQL es el punto de partida del runtime.
-	sqlServer, err := providers.NewSQLServer(cfg.Database, cfg.Secrets.DBConnectionString)
+	sqlServer, err := sqlserver.NewClient(cfg.Database, cfg.Secrets.DBConnectionString)
 	if err != nil {
 		return BatchRuntime{}, fmt.Errorf("bootstrap sqlserver: %w", err)
 	}
@@ -60,23 +61,23 @@ func BuildBatch(cfg appconfig.Config, logs logging.LoggerSet) (BatchRuntime, err
 	// - mover archivos;
 	// - escribir resultados;
 	// - y notificar.
-	providerRepo := providers.NewSQLServerRepository(sqlServer, cfg.Database)
-	categoryMappingRepo := catalog.NewSQLServerMappingRepository(sqlServer, cfg.Database)
-	categoryMappings, err := categoryMappingRepo.LoadGlobalMappings(context.Background())
+	providerRepo := sqlserver.NewProvidersRepository(sqlServer, cfg.Database)
+	categoryMappingRepo := sqlserver.NewCategoryBranchRepository(sqlServer, cfg.Database)
+	categoryMappings, err := categoryMappingRepo.LoadCatalogMappings(context.Background(), cfg.Batch.CatalogID)
 	if err != nil {
 		_ = sqlServer.Close()
 		return BatchRuntime{}, fmt.Errorf("load category mappings: %w", err)
 	}
 	scanner := intake.NewScanner(cfg.Paths.InputRoot)
 	excelReader := workbook.NewReader()
-	productsClient := products.NewClient(cfg.ProductsAPI, cfg.Secrets.ProductsAPIToken)
-	categoryResolver := catalog.NewResolver(productsClient, categoryMappings, products.CategoryBranch{
+	productsClient := productsapi.NewClient(cfg.ProductsAPI, cfg.Secrets.ProductsAPIToken)
+	categoryResolver := catalog.NewResolver(categoryMappings, productsapi.CategoryBranch{
 		Code: cfg.Catalog.FallbackCategoryCode,
 		Name: cfg.Catalog.FallbackCategoryName,
 	})
 	imageDownloader := images.NewDownloader(60 * time.Second)
 	mover := intake.NewMover(cfg.Paths.ProcessingRoot, cfg.Paths.ProcessedRoot)
-	sendGridClient := notifications.NewSendGridClient(cfg.Secrets.SendGridAPIKey)
+	sendGridClient := sendgrid.NewClient(cfg.Secrets.SendGridAPIKey)
 	notificationService := notifications.NewService(cfg.Notifications, sendGridClient, logs)
 	resultsWriter := results.NewWriter()
 

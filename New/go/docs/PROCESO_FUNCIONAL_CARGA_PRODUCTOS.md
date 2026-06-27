@@ -435,7 +435,6 @@ La API contempla, entre otras, estas rutas:
 - `/Mp_ProductsAPI_CTC/providers/{providerID}/products/{sku}/`
 - `/Mp_ProductsAPI_CTC/providers/{providerID}/products/{sku}/images/{index}`
 - `/Mp_ProductsAPI_CTC/providers/{providerID}/products/{sku}/images`
-- `/Mp_ProductsAPI_CTC/subcategories/{providerID}/{subcategoryName}`
 
 ## Qué representa cada endpoint dentro del proceso
 
@@ -444,8 +443,7 @@ Cada endpoint cumple un rol funcional distinto:
 - `/providers/{providerID}/products`: se usa para dar de alta un producto cuando no existe todavía para ese provider;
 - `/providers/{providerID}/products/{sku}/`: se usa para consultar un producto puntual y también para actualizarlo cuando ya existe;
 - `/providers/{providerID}/products/{sku}/images/{index}`: se usa para revisar o reemplazar una imagen en una posición determinada;
-- `/providers/{providerID}/products/{sku}/images`: se usa para agregar una imagen nueva cuando esa posición todavía no existe;
-- `/subcategories/{providerID}/{subcategoryName}`: se usa para intentar resolver una subcategoría informada en el Excel hacia una clasificación válida para el catálogo.
+- `/providers/{providerID}/products/{sku}/images`: se usa para agregar una imagen nueva cuando esa posición todavía no existe.
 
 ## Endpoint utilizado según la operación
 
@@ -513,16 +511,6 @@ Se utiliza:
 Se usa para:
 
 - crear una imagen cuando no existe todavía una imagen válida en esa posición.
-
-## Resolución de subcategoría
-
-Se utiliza:
-
-- `/Mp_ProductsAPI_CTC/subcategories/{providerID}/{subcategoryName}`
-
-Se usa para:
-
-- intentar transformar una subcategoría textual del Excel en una clasificación válida para catálogo.
 
 ## Qué hace el proceso contra la API de productos
 
@@ -815,9 +803,9 @@ El proceso aplica una lógica específica para transformar la subcategoría envi
 
 La lógica funcional sigue este orden:
 
-1. intentar resolver por el mapeo de subcategorías precargado desde base de datos;
-2. si no alcanza, consultar el endpoint de subcategorías de la API de productos;
-3. si tampoco resuelve, usar la categoría de respaldo `Varios`.
+1. precargar desde SQL Server el universo válido de ramas de categoría para el `catalog_id` configurado;
+2. comparar `SUB CATEGORIA` normalizada del Excel contra la clave normalizada del catálogo;
+3. si no hay match, usar la categoría de respaldo `Varios`.
 
 ## Qué significa esto en la práctica
 
@@ -827,7 +815,8 @@ Si la subcategoría coincide con un caso ya contemplado:
 
 Si no coincide:
 
-- intenta buscarla en el endpoint de subcategorías de la API de productos para ese provider.
+- no consulta ningún endpoint adicional de subcategorías;
+- cae directamente en la categoría general configurada.
 
 Si tampoco obtiene una resolución útil:
 
@@ -855,7 +844,7 @@ Por eso esta etapa define, en la práctica:
 
 - dónde queda clasificado el producto;
 - cómo se presenta comercialmente dentro del catálogo;
-- y si pudo resolverse por mapeo conocido, por búsqueda en API o por fallback.
+- y si pudo resolverse por catálogo precargado o por fallback.
 
 ## Qué pasa si `CATEGORIA` y `SUB CATEGORIA` no ayudan de la misma manera
 
@@ -863,9 +852,25 @@ Si ambos campos vienen informados, pero la subcategoría no logra una resolució
 
 - el proceso no se detiene automáticamente por contradicción textual;
 - intenta igualmente llegar a una clasificación operativa;
-- y si no encuentra una mejor alternativa, usa `Varios`.
+- y si no encuentra un match en el catálogo precargado, usa `Varios`.
 
 Eso significa que una fila puede completar su impacto de producto y, al mismo tiempo, quedar publicada en una clasificación genérica.
+
+## Diferencia con el legacy
+
+El legacy resolvía subcategorías con más capas:
+
+1. intentaba apoyarse en mappings previos;
+2. si no alcanzaba, consultaba la API de subcategorías;
+3. y recién después caía en una categoría comodín.
+
+La V2 actual simplifica esa decisión:
+
+1. precarga desde SQL Server las ramas válidas del catálogo objetivo;
+2. resuelve solo contra ese dataset;
+3. y si no encuentra match, cae al fallback configurado.
+
+Esto elimina la dependencia de la API de subcategorías para clasificar y hace que la resolución dependa directamente del catálogo real configurado.
 
 ## Valor funcional de esta lógica
 
@@ -873,35 +878,11 @@ Esto evita que cada pequeña diferencia de redacción en la subcategoría rompa 
 
 ---
 
-## Integración con el endpoint de subcategorías de la API de productos
-
-Cuando no alcanza el mapeo precargado, el proceso consulta el endpoint de subcategorías dentro de la misma API de productos.
-
-## Qué busca
-
-Busca coincidencias por:
-
-- provider;
-- texto de subcategoría informado.
-
-## Qué decisión toma con la respuesta
-
-Si obtiene una lista de resultados:
-
-- toma la primera coincidencia útil.
-
-Si no obtiene coincidencia:
-
-- el proceso no se detiene por eso;
-- continúa con la categoría de respaldo `Varios`.
-
-Esto es importante porque muestra que la resolución de categoría es robusta, pero no perfecta. Tiene mecanismos de continuidad para evitar bloquear toda una carga por una clasificación no encontrada.
-
 ## Consecuencia operativa de esta lógica
 
 La clasificación no funciona como un simple copiado textual.
 
-Funciona como un proceso de resolución.
+Funciona como un proceso de resolución contra el catálogo precargado.
 
 Eso significa que dos productos con textos parecidos pueden terminar:
 

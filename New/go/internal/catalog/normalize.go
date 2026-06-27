@@ -5,9 +5,9 @@ import (
 	"unicode"
 )
 
-// normalizeCategoryKey arma la clave de comparación interna usada por el
+// NormalizeCategoryKey arma la clave de comparación interna usada por el
 // resolvedor para matchear subcategorías contra el hardcode.
-func normalizeCategoryKey(value string) string {
+func NormalizeCategoryKey(value string) string {
 	trimmed := strings.TrimSpace(value)
 	upper := strings.ToUpper(trimmed)
 	withoutAccents := removeCategoryAccents(upper)

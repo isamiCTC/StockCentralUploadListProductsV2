@@ -1,4 +1,4 @@
-package notifications
+package sendgrid
 
 import (
 	"context"
@@ -17,8 +17,8 @@ import (
 // La idea es que el resto del proyecto no necesite conocer el detalle fino de
 // la librería ni del armado HTTP contra SendGrid.
 
-// SendGridClient es el adaptador concreto de envío de mails.
-type SendGridClient struct {
+// Client es el adaptador concreto de envío de mails.
+type Client struct {
 	apiKey string
 }
 
@@ -28,13 +28,13 @@ type mailAttachment struct {
 	Type     string
 }
 
-// NewSendGridClient crea un cliente mínimo con el API key configurado.
-func NewSendGridClient(apiKey string) *SendGridClient {
-	return &SendGridClient{apiKey: apiKey}
+// NewClient crea un cliente mínimo con el API key configurado.
+func NewClient(apiKey string) *Client {
+	return &Client{apiKey: apiKey}
 }
 
 // SendMail realiza el envío real con asunto, cuerpo corto y múltiples adjuntos.
-func (c *SendGridClient) SendMail(ctx context.Context, fromEmail string, to []string, subject, body string, attachmentPaths []string) error {
+func (c *Client) SendMail(ctx context.Context, fromEmail string, to []string, subject, body string, attachmentPaths []string) error {
 	if len(to) == 0 {
 		return fmt.Errorf("sendgrid recipients list is empty")
 	}
@@ -106,6 +106,8 @@ func readAttachments(paths []string) ([]mailAttachment, error) {
 	return attachments, nil
 }
 
+// detectAttachmentContentType conserva una detección mínima orientada a los
+// adjuntos que hoy genera el batch.
 func detectAttachmentContentType(path string) string {
 	switch strings.ToLower(filepath.Ext(path)) {
 	case ".xlsx":
