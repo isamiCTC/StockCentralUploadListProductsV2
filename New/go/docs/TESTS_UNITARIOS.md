@@ -2,32 +2,29 @@
 
 ## Objetivo de este documento
 
-Este documento enumera los tests unitarios que existen hoy en el proyecto nuevo, explica qué valida cada uno y deja claro qué parte del comportamiento está protegida por tests automáticos.
+Este documento inventaria los tests unitarios actuales de `New/go`, explica qué protege cada grupo y deja claro qué partes del comportamiento real de V2 hoy están cubiertas por automatización.
 
-La idea no es solo listar nombres. También busca responder:
-
-- qué escenario prueba cada test;
-- qué regla de negocio o de infraestructura protege;
-- y qué riesgo ayuda a evitar si alguien cambia el código más adelante.
+La referencia para validar si algo sigue vigente es el código actual. Si la implementación cambia, este archivo debe acompañar ese cambio.
 
 ---
 
 ## Alcance
 
-Este inventario cubre los tests unitarios actuales dentro de `New/go`.
+Este inventario cubre los tests unitarios hoy presentes dentro de `New/go`.
 
 No cubre:
 
 - tests de integración contra SQL Server real;
-- tests end-to-end con filesystem completo;
-- pruebas manuales u operativas;
+- tests end-to-end contra filesystem real completo;
+- corridas reales contra Products API;
+- envío real de mails;
 - ni validaciones del legacy en C#.
 
 ---
 
 ## Cómo correrlos
 
-La forma oficial de correr la suite es usando el script dedicado desde la carpeta `New/go`:
+La forma oficial de correr la suite desde `New/go` es:
 
 ```powershell
 ./scripts/test.ps1
@@ -39,15 +36,10 @@ Ese script:
 - muestra la salida real mientras corre;
 - y cierra con un resumen final más legible.
 
-Si querés correr algo puntual a mano, podés usar `go test` directamente. Por ejemplo:
+También se puede usar `go test` directo para ciclos puntuales. Por ejemplo:
 
-```bash
+```powershell
 go test ./...
-```
-
-Si querés correr solo un paquete:
-
-```bash
 go test ./internal/workbook/...
 go test ./internal/integrations/productsapi/...
 go test ./internal/integrations/sqlserver/...
@@ -57,9 +49,9 @@ go test ./internal/integrations/sqlserver/...
 
 ## Resumen general
 
-Hoy existen **54 tests unitarios**.
+Hoy existen **60 tests unitarios**.
 
-Están concentrados en estas áreas:
+Están repartidos en estas áreas:
 
 - `internal/batch`
 - `internal/catalog`
@@ -74,29 +66,30 @@ Están concentrados en estas áreas:
 - `internal/results`
 - `internal/workbook`
 
-En términos prácticos, hoy se cubren especialmente:
+En términos prácticos, hoy la suite cubre especialmente:
 
 - reglas de parsing y validación de Excel;
-- semántica legacy de producto e imágenes;
+- semántica legacy de producto, stock e imágenes;
+- resolución de categorías contra cache SQL + fallback configurado;
 - movimientos de archivos;
 - escritura de Excels de salida;
 - carga de configuración y secretos;
-- presentación final de resultados para cliente/negocio;
+- presentación final de resultados y humanización de errores;
 - resolución de destinatarios y notificación;
-- algunos caminos críticos de timeout por fila.
+- caminos sensibles de timeout por fila.
 
 ---
 
 ## Enfoque de los tests
 
-La mayoría usa técnicas típicas de tests unitarios en Go:
+La suite usa principalmente:
 
 - `httptest` para simular APIs HTTP sin salir a red real;
 - `t.TempDir()` para crear carpetas y archivos temporales;
 - stubs simples para reemplazar componentes externos;
-- y checks directos sobre structs, archivos generados o errores devueltos.
+- checks directos sobre structs, archivos generados y errores devueltos.
 
-Eso significa que estos tests son rápidos, aislados y no dependen de infraestructura real.
+Eso hace que los tests sean rápidos, aislados y sin dependencia de infraestructura real.
 
 ---
 
@@ -108,111 +101,31 @@ Archivo: `internal/batch/file_processor_test.go`
 
 ### `TestNewFileProcessorAppliesDefaults`
 
-Qué prueba:
-
-- que `NewFileProcessor` complete valores por defecto cuando recibe `0` o valores vacíos.
-
-Qué valida:
-
-- `rowWorkers` mínimo en `1`;
-- `rowTimeout` por defecto en `120s`.
-
-Por qué importa:
-
-- evita que una mala configuración deje el procesador en un estado inválido.
+Valida que `NewFileProcessor` complete defaults seguros cuando recibe valores vacíos o inválidos.
 
 ### `TestSummarizeRowResultsIgnoresSkippedAndCountsFinalStates`
 
-Qué prueba:
-
-- que el resumen final de filas ignore las `SKIPPED` y cuente bien `OK`, `PARTIAL_OK` y `ERROR`.
-
-Qué valida:
-
-- cantidad de filas procesadas;
-- cantidad de éxitos;
-- cantidad de parciales;
-- cantidad de errores.
-
-Por qué importa:
-
-- protege la consolidación del resultado final del archivo.
+Valida que el resumen final ignore filas `SKIPPED` y consolide correctamente `OK`, `PARTIAL_OK` y `ERROR`.
 
 ### `TestResolveFileStatusReturnsProcessedWithErrorsWhenAnyRowFailedOrPartial`
 
-Qué prueba:
-
-- la regla que decide el estado final del archivo.
-
-Qué valida:
-
-- si no hay errores ni parciales, el archivo queda `PROCESSED`;
-- si hay al menos un error o parcial, queda `PROCESSED_WITH_ERRORS`.
-
-Por qué importa:
-
-- asegura consistencia entre resultados por fila y estado global del archivo.
+Protege la regla que decide si el archivo termina en `PROCESSED` o `PROCESSED_WITH_ERRORS`.
 
 ### `TestProcessMappedRowsMarksStockRowAsErrorWhenRowTimeoutExpires`
 
-Qué prueba:
+Cubre el timeout por fila en un flujo de stock update y verifica que la fila termine en `ERROR`.
 
-- un timeout real de fila durante un flujo de stock update.
+### `TestProcessStockUpdateRowHumanizesAPIErrorDetail`
 
-Cómo lo hace:
-
-- monta un servidor HTTP fake que responde lento;
-- usa un `rowTimeout` muy chico;
-- procesa una fila de stock.
-
-Qué valida:
-
-- la fila termina en `ERROR`;
-- el mensaje final informa timeout.
-
-Por qué importa:
-
-- protege uno de los caminos operativos más delicados: que una fila lenta no quede “colgada”.
+Verifica que un error técnico de API en stock update se traduzca a detalle legible para el Excel final, sin dejar el mensaje crudo de infraestructura.
 
 ### `TestProcessFullImportRowMarksPartialWhenTimeoutExpiresDuringImages`
 
-Qué prueba:
-
-- el caso donde el producto ya quedó impactado, pero la fila vence durante la sincronización de imágenes.
-
-Cómo lo hace:
-
-- simula una API de producto rápida;
-- simula un servidor de imágenes muy lento;
-- procesa una fila full import con imágenes.
-
-Qué valida:
-
-- la fila termina en `PARTIAL_OK`;
-- `ProductResult` queda `ACTUALIZADO`;
-- `ImagesResult` queda `PARCIAL`;
-- el mensaje final queda en formato cliente-final;
-- el detalle explica que las imágenes no pudieron completarse dentro del tiempo esperado.
-
-Por qué importa:
-
-- protege la semántica parcial correcta del proceso.
+Cubre el caso donde el producto quedó impactado pero la fila vence durante la sincronización de imágenes, dejando la fila en `PARTIAL_OK`.
 
 ### `TestProcessFullImportRowMarksPartialWhenCategoryFallsBack`
 
-Qué prueba:
-
-- que una fila full import quede `PARTIAL_OK` cuando la categoría informada no se puede resolver y termina en la categoría general configurada.
-
-Qué valida:
-
-- la fila no queda `OK` silenciosamente;
-- el mensaje pasa a `Producto actualizado con observaciones`;
-- el detalle explica que se asignó una categoría general.
-
-Por qué importa:
-
-- protege una observación de negocio relevante para el Excel que ve cliente final.
+Verifica que caer en la categoría general configurada no marque la fila como `OK` silenciosamente y que el resultado visible quede como observación parcial.
 
 ## `internal/catalog`
 
@@ -220,42 +133,15 @@ Archivo: `internal/catalog/resolver_test.go`
 
 ### `TestResolveBySubcategoryMatchesDatabaseMappingWithLooseNormalization`
 
-Qué prueba:
-
-- que la resolución desde la cache precargada del catálogo soporte normalización laxa.
-
-Qué valida:
-
-- tolerancia a mayúsculas, tildes y espacios internos;
-- que no haga falta ninguna consulta adicional cuando la cache local ya alcanza.
-
-Por qué importa:
-
-- protege el primer nivel de resolución de categorías.
+Valida que la resolución por subcategoría funcione contra la cache precargada del catálogo usando normalización laxa.
 
 ### `TestResolveBySubcategoryFallsBackWhenDatabaseMappingDoesNotMatch`
 
-Qué prueba:
+Protege el fallback configurado cuando la subcategoría no matchea contra una rama válida del catálogo.
 
-- el fallback final cuando no hay match en la cache del catálogo.
+### `TestResolveBySubcategoryFallsBackWhenDatabaseMappingHasNoMatches`
 
-Qué valida:
-
-- que el resolvedor devuelva la categoría general configurada.
-
-Por qué importa:
-
-- protege la continuidad de la resolución aunque no exista match.
-
-Qué valida:
-
-- que el resolvedor devuelva la categoría general configurada.
-
-Por qué importa:
-
-- asegura que la cadena completa de resolución no termine en vacío.
-
----
+Valida el caso extremo donde el dataset precargado no aporta ninguna coincidencia y el resolvedor igual responde con el fallback configurado.
 
 ## `internal/config`
 
@@ -263,50 +149,15 @@ Archivo: `internal/config/loader_test.go`
 
 ### `TestLoadReadsSecretsFromEnvFile`
 
-Qué prueba:
-
-- que `Load` lea correctamente secretos desde `.env`.
-
-Qué valida:
-
-- `DB_CONNECTION_STRING`;
-- `PRODUCTS_API_TOKEN`;
-- `SENDGRID_API_KEY`.
-
-Por qué importa:
-
-- asegura que la configuración final se arme correctamente con TOML + `.env`.
+Verifica que `Load` combine TOML y `.env` y levante correctamente los secretos requeridos.
 
 ### `TestLoadFailsWhenProductsTokenIsMissing`
 
-Qué prueba:
-
-- que falle la carga si falta `PRODUCTS_API_TOKEN`.
-
-Qué valida:
-
-- que devuelva error;
-- que el mensaje mencione el faltante correcto.
-
-Por qué importa:
-
-- evita arrancar el batch sin token de API de productos.
+Protege el fail-fast cuando falta `PRODUCTS_API_TOKEN`.
 
 ### `TestLoadFailsWhenNotificationsAreEnabledButSendGridKeyIsMissing`
 
-Qué prueba:
-
-- que falle la carga cuando notificaciones están activadas pero falta `SENDGRID_API_KEY`.
-
-Qué valida:
-
-- que la validación sea condicional a `notifications.enabled = true`.
-
-Por qué importa:
-
-- protege un caso de configuración inconsistente que después rompería el envío de mails.
-
----
+Valida que `SENDGRID_API_KEY` sea obligatoria solo cuando las notificaciones están activadas.
 
 ## `internal/intake`
 
@@ -314,72 +165,25 @@ Archivo: `internal/intake/scanner_test.go`
 
 ### `TestDiscoverProviderFilesFiltersByProviderAndExtensionAndKeepsRelativePath`
 
-Qué prueba:
-
-- el descubrimiento real de archivos candidatos en `input_root`.
-
-Qué valida:
-
-- solo entra el provider habilitado;
-- solo entran `.xlsx`;
-- se permiten subdirectorios;
-- se conserva `RelativePath`;
-- se copia correctamente `ProviderID`, `ProviderName` y `ProviderEmail`.
-
-Por qué importa:
-
-- protege una de las reglas centrales del sistema: qué archivos se consideran válidos para procesar.
+Valida el descubrimiento de archivos `.xlsx` dentro de carpetas numéricas de providers válidos y la preservación de `RelativePath`.
 
 ### `TestDiscoverProviderFilesStopsWhenContextIsCanceled`
 
-Qué prueba:
-
-- que el scanner respete cancelación del contexto.
-
-Qué valida:
-
-- si el contexto ya está cancelado, devuelve `context.Canceled`.
-
-Por qué importa:
-
-- garantiza comportamiento correcto ante corte externo de la corrida.
+Protege que el scanner respete cancelación de contexto y corte la corrida de forma correcta.
 
 Archivo: `internal/intake/mover_test.go`
 
 ### `TestBuildPathsPreservesProviderAndRelativeStructure`
 
-Qué prueba:
-
-- cómo se derivan las rutas de `processing`, `processed`, `result` y `structure-errors`.
-
-Qué valida:
-
-- que se conserve el provider;
-- que se conserve la subruta relativa;
-- que los sufijos de salida queden bien armados.
-
-Por qué importa:
-
-- protege la consistencia del ciclo de vida del archivo.
+Verifica el cálculo de rutas derivadas para `processing`, `processed`, `results` y `structure-errors`.
 
 ### `TestMoveToProcessingAndProcessedMovesFileAndUpdatesInputPath`
 
-Qué prueba:
+Cubre el movimiento real del archivo entre estados y la actualización de `InputPath`.
 
-- los movimientos reales de archivo entre estados.
+### `TestMoveToProcessingFallsBackToCopyAndRemoveOnCrossDeviceError`
 
-Qué valida:
-
-- el archivo se mueve a `processing`;
-- desaparece del origen;
-- luego se mueve a `processed`;
-- `InputPath` se actualiza en cada paso.
-
-Por qué importa:
-
-- evita desalineación entre el archivo físico y el estado lógico del `FileJob`.
-
----
+Valida el fallback a copiar y borrar cuando un rename directo falla por cruce de volumen o device.
 
 ## `internal/notifications`
 
@@ -387,82 +191,25 @@ Archivo: `internal/notifications/recipients_test.go`
 
 ### `TestResolveRecipientsDeduplicatesAndTrims`
 
-Qué prueba:
-
-- la resolución final de destinatarios.
-
-Qué valida:
-
-- trim de espacios;
-- deduplicación case-insensitive;
-- combinación entre `always_recipients` y mail del provider.
-
-Por qué importa:
-
-- evita enviar mails duplicados o con direcciones sucias.
+Protege trim, deduplicación case-insensitive y combinación entre `always_recipients` y mail del provider.
 
 Archivo: `internal/notifications/service_test.go`
 
 ### `TestNotifyFileProcessedSkipsWhenNotificationsDisabled`
 
-Qué prueba:
-
-- que el servicio no intente enviar nada si las notificaciones están apagadas.
-
-Qué valida:
-
-- cero llamadas al sender.
-
-Por qué importa:
-
-- evita efectos secundarios cuando la funcionalidad está deshabilitada por config.
+Verifica que el servicio no intente enviar nada si las notificaciones están desactivadas.
 
 ### `TestNotifyFileProcessedSendsExpectedAttachmentForProcessedWithErrors`
 
-Qué prueba:
-
-- el caso normal de archivo procesado con errores.
-
-Qué valida:
-
-- `from_email`;
-- destinatarios finales;
-- subject;
-- attachment de `ResultsFilePath`.
-
-Por qué importa:
-
-- protege el contrato externo más visible del cierre del archivo.
+Valida el caso normal de archivo procesado con errores y el adjunto correcto del Excel de resultados.
 
 ### `TestNotifyFileProcessedUsesStructureAttachmentForStructureError`
 
-Qué prueba:
-
-- el caso de rechazo estructural.
-
-Qué valida:
-
-- que use `StructureErrorsPath` como adjunto.
-
-Por qué importa:
-
-- evita mandar el archivo equivocado cuando el Excel se rechaza por estructura.
+Verifica que, ante error estructural, el adjunto sea `StructureErrorsPath`.
 
 ### `TestNotifyFileProcessedReturnsWrappedSenderError`
 
-Qué prueba:
-
-- el comportamiento cuando el sender falla.
-
-Qué valida:
-
-- que el error no se silencie.
-
-Por qué importa:
-
-- permite que capas superiores logueen o reaccionen ante el fallo del correo.
-
----
+Protege que un fallo del sender no se silencie y conserve contexto útil.
 
 ## `internal/integrations/productsapi`
 
@@ -470,86 +217,33 @@ Archivo: `internal/integrations/productsapi/products_test.go`
 
 ### `TestUpsertProductLegacyCreatesWhenProductDoesNotExist`
 
-Qué prueba:
-
-- la semántica legacy de upsert de producto.
-
-Cómo lo hace:
-
-- finge un `PUT` que responde `Producto inexistente`;
-- luego espera un `POST`.
-
-Qué valida:
-
-- que el resultado final sea `CREATE`;
-- que se haga primero `PUT` y después `POST`.
-
-Por qué importa:
-
-- protege una de las reglas más importantes heredadas del legacy.
+Valida la semántica legacy de `PUT` seguido de `POST` cuando la API responde `Producto inexistente`.
 
 ### `TestUpsertProductLegacyFailsWhenCreateReturnsNon2xx`
 
-Qué prueba:
+Protege que un `POST` fallido no se informe como creación exitosa.
 
-- el caso donde el fallback a create también falla.
+### `TestUpsertProductLegacyFailsWhenUpdateReturnsNon2xxAndIncludesBody`
 
-Qué valida:
-
-- que `UpsertProductLegacy` devuelva error si el `POST` no es exitoso.
-
-Por qué importa:
-
-- evita falsos positivos de “producto creado” cuando la API realmente falló.
+Verifica que un fallo no recuperable del `PUT` devuelva error con contexto y body útil para diagnóstico.
 
 Archivo: `internal/integrations/productsapi/images_test.go`
 
 ### `TestSyncImageLegacySkipsWhenBase64IsEqual`
 
-Qué prueba:
-
-- que no se vuelva a subir una imagen si la existente ya es igual.
-
-Qué valida:
-
-- `Action = SKIP_SAME_IMAGE`;
-- no se usa `PUT` ni `POST`.
-
-Por qué importa:
-
-- protege eficiencia y fidelidad con la lógica legacy.
+Valida que no se resuba una imagen cuando el contenido existente ya es idéntico.
 
 ### `TestSyncImageLegacyCreatesWhenPutSaysImageNotFound`
 
-Qué prueba:
-
-- la semántica legacy de imágenes cuando el índice todavía no existe.
-
-Qué valida:
-
-- primero intenta `PUT`;
-- si la API responde `34|Imagen inexistente`, hace `POST`;
-- el resultado final es `CREATE`.
-
-Por qué importa:
-
-- protege exactamente el comportamiento que se quería mantener respecto del legacy.
+Protege la semántica legacy de `PUT` seguido de `POST` cuando la imagen aún no existe en ese índice.
 
 ### `TestSyncImageLegacyFailsWhenUpdateReturnsNon2xx`
 
-Qué prueba:
+Verifica que un error no recuperable de update no se silencie.
 
-- que falle la sincronización si el `PUT` da un error no recuperable.
+### `TestSyncImageLegacyFailsWhenCreateReturnsNon2xxAndIncludesBody`
 
-Qué valida:
-
-- que no se silencien errores de update.
-
-Por qué importa:
-
-- evita marcar imágenes como sincronizadas cuando la API respondió mal.
-
----
+Valida que un fallo del `POST` de imagen preserve el contexto técnico importante para diagnóstico.
 
 ## `internal/results`
 
@@ -557,34 +251,11 @@ Archivo: `internal/results/writer_test.go`
 
 ### `TestWriteRowResultsOmitsSkippedRowsAndWritesExpectedSheet`
 
-Qué prueba:
-
-- la escritura del Excel `Resultados`.
-
-Qué valida:
-
-- la hoja se llama `Resultados`;
-- las filas `SKIPPED` no se escriben;
-- los datos útiles quedan en celdas esperadas.
-
-Por qué importa:
-
-- protege el formato del archivo que recibe negocio.
+Protege la escritura del Excel `Resultados`, incluyendo la omisión de filas `SKIPPED`.
 
 ### `TestWriteStructureErrorsWritesExpectedRows`
 
-Qué prueba:
-
-- la escritura del Excel `ErroresEstructura`.
-
-Qué valida:
-
-- la hoja se llama `ErroresEstructura`;
-- campo, mensaje y detalle quedan en columnas correctas.
-
-Por qué importa:
-
-- asegura que el rechazo estructural sea legible para usuario final.
+Verifica la escritura del Excel `ErroresEstructura` con columnas y contenido esperados.
 
 ## `internal/reporting`
 
@@ -592,67 +263,29 @@ Archivo: `internal/reporting/row_outcome_builder_test.go`
 
 ### `TestBuildStockSuccessPresentation`
 
-Qué prueba:
-
-- el texto final visible para una fila de stock update exitosa.
-
-Qué valida:
-
-- `Status = OK`;
-- mensaje de stock orientado a cliente;
-- detalle sin códigos HTTP ni tecnicismos.
-
-Por qué importa:
-
-- protege la separación entre hechos técnicos y redacción final del Excel.
+Valida el texto final visible para una fila de stock update exitosa.
 
 ### `TestBuildFullImportPresentationReturnsOKForUpdatedProductWithUnchangedImages`
 
-Qué prueba:
-
-- el caso donde el producto se actualiza y las imágenes ya estaban cargadas.
-
-Qué valida:
-
-- la fila queda `OK`;
-- `ImagesResult = OK`;
-- el detalle dice que las imágenes ya se encontraban cargadas.
-
-Por qué importa:
-
-- evita reportar como problema algo que en realidad es un resultado correcto.
+Protege el caso donde el producto quedó bien y las imágenes ya estaban cargadas.
 
 ### `TestBuildFullImportPresentationReturnsPartialForFallbackCategory`
 
-Qué prueba:
-
-- el caso donde la categoría informada no se reconoce y se asigna una categoría general.
-
-Qué valida:
-
-- la fila pasa a `PARTIAL_OK`;
-- el mensaje queda `... con observaciones`;
-- el detalle explica la asignación de categoría general.
-
-Por qué importa:
-
-- protege una decisión clave de negocio para el Excel final.
+Verifica la presentación final cuando se usa la categoría fallback configurada.
 
 ### `TestBuildFullImportPresentationReturnsPartialForInterruptedImages`
 
-Qué prueba:
+Protege la presentación visible cuando el producto se impactó pero las imágenes quedaron parciales por interrupción o timeout.
 
-- la presentación final cuando el producto se impactó, pero las imágenes no terminaron por timeout.
+Archivo: `internal/reporting/error_presentation_test.go`
 
-Qué valida:
+### `TestBuildErrorPresentationHumanizesHTTPAPIError`
 
-- `Status = PARTIAL_OK`;
-- `ImagesResult = PARCIAL`;
-- detalle cliente-final explicando la interrupción.
+Valida la traducción de errores HTTP de API a mensajes legibles para negocio o cliente final.
 
-Por qué importa:
+### `TestBuildErrorPresentationHumanizesImageDownloadError`
 
-- asegura consistencia en un caso parcial sensible.
+Verifica la humanización de errores de descarga de imágenes sin exponer detalles técnicos innecesarios.
 
 ## `internal/images`
 
@@ -660,45 +293,15 @@ Archivo: `internal/images/downloader_test.go`
 
 ### `TestIsWebPImageDetectsContentType`
 
-Qué prueba:
-
-- la detección de WebP por content-type.
-
-Qué valida:
-
-- que `image/webp` se reconozca como WebP aunque el contenido no sea una imagen real completa.
-
-Por qué importa:
-
-- protege la heurística mínima que decide si hay que convertir imágenes WebP.
+Valida la detección de WebP por `Content-Type`.
 
 ### `TestIsWebPImageDetectsRIFFHeader`
 
-Qué prueba:
-
-- la detección de WebP por firma binaria.
-
-Qué valida:
-
-- que un encabezado `RIFF ... WEBP` se identifique correctamente.
-
-Por qué importa:
-
-- evita depender solo del content-type reportado por el servidor remoto.
+Valida la detección de WebP por firma binaria `RIFF ... WEBP`.
 
 ### `TestIsWebPImageIgnoresJPEGData`
 
-Qué prueba:
-
-- que un payload JPEG no se marque como WebP.
-
-Qué valida:
-
-- que no haya falsos positivos en la detección.
-
-Por qué importa:
-
-- evita conversiones innecesarias o incorrectas.
+Protege contra falsos positivos al distinguir imágenes JPEG de WebP.
 
 ## `internal/logging`
 
@@ -706,33 +309,11 @@ Archivo: `internal/logging/logger_test.go`
 
 ### `TestBufferFlushSeparatesBlockWithBlankLines`
 
-Qué prueba:
-
-- que el buffer de logs escriba el bloque completo con separación visual.
-
-Qué valida:
-
-- línea en blanco al inicio del bloque;
-- línea en blanco al final del bloque;
-- presencia de todas las líneas acumuladas.
-
-Por qué importa:
-
-- protege el formato legible del `detail` por SKU.
+Verifica el formato de los bloques buffered del log `detail`.
 
 ### `TestLoggerBlankWritesSingleEmptyLine`
 
-Qué prueba:
-
-- la escritura de una línea vacía explícita.
-
-Qué valida:
-
-- que `Blank()` use el separador de línea del sistema operativo.
-
-Por qué importa:
-
-- mantiene compatibilidad entre Linux/macOS y visores simples de Windows.
+Protege la escritura consistente de una línea vacía explícita usando el separador del sistema operativo.
 
 ## `internal/integrations/sqlserver`
 
@@ -740,20 +321,7 @@ Archivo: `internal/integrations/sqlserver/client_test.go`
 
 ### `TestQueryContextKeepsRowsUsableAfterReturn`
 
-Qué prueba:
-
-- que `SQLServer.QueryContext` no invalide las filas apenas retorna.
-
-Qué valida:
-
-- que `rows.Next()` siga funcionando correctamente después del return;
-- que el contexto siga siendo usable durante el recorrido de filas.
-
-Por qué importa:
-
-- protege una decisión técnica importante del wrapper de SQL Server para no cortar la lectura del resultset antes de tiempo.
-
----
+Valida que `QueryContext` no invalide el resultset apenas retorna y permita consumir filas correctamente.
 
 ## `internal/workbook`
 
@@ -761,177 +329,73 @@ Archivo: `internal/workbook/normalize_test.go`
 
 ### `TestNormalizeHeader`
 
-Qué prueba:
-
-- la normalización laxa de headers.
-
-Qué valida:
-
-- trim;
-- colapso de espacios;
-- remoción de diferencias como tildes y formato superficial.
-
-Por qué importa:
-
-- permite tolerar pequeñas variaciones humanas en encabezados.
+Protege la normalización laxa de headers.
 
 ### `TestNormalizeCell`
 
-Qué prueba:
-
-- la normalización básica de una celda.
-
-Qué valida:
-
-- recorte de espacios exteriores.
-
-Por qué importa:
-
-- evita errores tontos por valores con padding.
+Valida la limpieza conservadora de celdas vía trim externo.
 
 Archivo: `internal/workbook/validator_test.go`
 
 ### `TestValidateStructureAcceptsLaxHeaders`
 
-Qué prueba:
-
-- que la validación estructural acepte headers válidos aunque vengan con diferencias cosméticas.
-
-Qué valida:
-
-- matching por header normalizado;
-- indexación correcta de columnas.
-
-Por qué importa:
-
-- protege la estrategia de validación flexible acordada para el batch.
+Verifica que la validación estructural acepte diferencias cosméticas de headers válidos.
 
 ### `TestValidateStructureReportsMissingColumns`
 
-Qué prueba:
-
-- la detección de columnas faltantes.
-
-Qué valida:
-
-- que devuelva el error sobre el campo correcto.
-
-Por qué importa:
-
-- evita que un Excel incompleto avance a etapas más costosas.
+Protege la detección de columnas faltantes.
 
 ### `TestValidateStructureReportsDuplicates`
 
-Qué prueba:
-
-- la detección de columnas duplicadas.
-
-Qué valida:
-
-- que el error se marque con el mensaje esperado.
-
-Por qué importa:
-
-- protege contra archivos ambiguos o mal exportados.
+Protege la detección de columnas duplicadas.
 
 Archivo: `internal/workbook/numbers_test.go`
 
 ### `TestParseFlexibleFloat`
 
-Qué prueba:
-
-- varias variantes de números decimales frecuentes en proveedores.
-
-Qué valida:
-
-- punto decimal;
-- coma decimal;
-- miles con punto;
-- miles con coma;
-- espacios.
-
-Por qué importa:
-
-- protege el parsing flexible del importador.
+Valida el parsing flexible de decimales con distintos separadores y formatos humanos frecuentes.
 
 ### `TestParseFlexibleFloatInvalid`
 
-Qué prueba:
-
-- que una cadena no numérica falle.
-
-Qué valida:
-
-- que no se acepte basura como número.
-
-Por qué importa:
-
-- evita que datos inválidos pasen como si fueran correctos.
+Verifica que una cadena no numérica falle como corresponde.
 
 ### `TestParseFlexibleInt`
 
-Qué prueba:
-
-- parsing válido de enteros.
-
-Qué valida:
-
-- conversión correcta a `int`.
-
-Por qué importa:
-
-- protege campos como stock y otros enteros obligatorios.
+Protege la conversión válida de enteros.
 
 ### `TestParseFlexibleIntRejectsDecimalValue`
 
-Qué prueba:
+Verifica que un decimal no se acepte silenciosamente como entero.
 
-- que un valor decimal no se acepte como entero.
+### `TestParseFlexibleIntWithCurrencySymbol`
 
-Qué valida:
-
-- rechazo explícito de `12,5` como `int`.
-
-Por qué importa:
-
-- evita truncamientos silenciosos.
+Valida que el parser soporte enteros expresados con símbolo monetario cuando el input sigue siendo numéricamente válido.
 
 Archivo: `internal/workbook/mapper_test.go`
 
 ### `TestMapRowsFullImportHappyPath`
 
-Qué prueba:
+Protege el camino principal del mapeo completo de 19 columnas, incluyendo peso, IVA, oferta e imágenes.
 
-- el mapeo completo exitoso de una fila de importación de 19 columnas.
+### `TestMapRowsFullImportAcceptsCurrencySymbolInPriceFields`
 
-Qué valida:
-
-- se crea el DTO `FullImport`;
-- no hay errores de fila;
-- `WeightKilograms` se convierte desde gramos a kilogramos;
-- `OFERTA` pisa `Price`;
-- `IVA` se normaliza a porcentaje;
-- `SyncImages` queda en `true`;
-- las URLs de imagen se separan bien y quedan dos.
-
-Por qué importa:
-
-- protege el camino funcional principal del import full.
+Valida que los campos monetarios acepten símbolos de moneda frecuentes sin romper el parsing.
 
 ### `TestMapRowsFullImportInvalidImageURLProducesError`
 
-Qué prueba:
+Verifica que una URL de imagen inválida corte la fila antes de llegar a sincronización.
 
-- una fila full import con URL de imagen inválida.
+### `TestMapRowsStockUpdateInvalidSKUProducesError`
 
-Qué valida:
+Protege la validación de SKU en el formato corto de stock update.
 
-- la fila queda con errores;
-- el mapper no deja pasar imágenes mal formadas.
+### `TestMapRowsFullImportKeepsInvalidStartDateWithoutError`
 
-Por qué importa:
+Valida el comportamiento actual de V2: las fechas se conservan como texto crudo y no fallan por formato.
 
-- evita llegar a la API de imágenes con input roto desde el Excel.
+### `TestMapRowsFullImportKeepsInvertedDateRangeWithoutError`
+
+Verifica que un rango invertido de fechas tampoco invalide la fila en el mapper actual.
 
 ---
 
@@ -939,14 +403,15 @@ Por qué importa:
 
 Hoy la cobertura conceptual más fuerte está en:
 
-- semántica legacy de producto;
-- semántica legacy de imágenes;
-- resolución de categorías con mapping + API + fallback;
-- parsing y validación del workbook;
+- semántica legacy de producto, stock e imágenes;
+- resolución de categorías contra dataset SQL precargado y fallback;
+- parsing, normalización y validación del workbook;
+- mapeo de filas full import y stock update;
+- movimientos de archivos;
 - generación de archivos de salida;
-- presentación final de resultados por fila;
+- presentación final de resultados y errores;
 - reglas de notificación;
-- timeouts críticos de fila.
+- timeouts críticos por fila.
 
 ---
 
@@ -954,27 +419,29 @@ Hoy la cobertura conceptual más fuerte está en:
 
 Hoy no se ve cobertura unitaria específica, por ejemplo, para:
 
-- CLI y subcomandos;
+- CLI y subcomandos como comportamiento integral;
 - `self-check`;
-- lectura real de Excel desde archivos de entrada complejos;
+- lectura real de archivos Excel complejos desde disco;
 - integración real con SQL Server;
 - integración real con SendGrid;
-- logging como salida observable de punta a punta en archivos reales;
-- `products/downloader` con batería específica de formatos de imagen.
+- corrida batch completa de punta a punta;
+- logging como artefacto operativo completo sobre archivos reales;
+- descarga y conversión de imágenes con una batería más amplia de formatos y respuestas remotas.
 
-Esto no significa que esté mal. Solo marca qué partes hoy dependen más de revisión manual, lectura de código o futuras pruebas de integración.
+Esto no implica que el proyecto esté mal cubierto. Solo marca qué partes hoy dependen más de lectura de código, validación manual o futuras pruebas de integración.
 
 ---
 
 ## Conclusión
 
-La suite actual de tests unitarios no es enorme, pero sí está bastante bien orientada: cubre reglas delicadas, caminos legacy importantes y varios puntos donde un cambio pequeño podría romper comportamiento esperado.
+La suite actual no es enorme, pero sí cubre varios puntos donde un cambio chico podría romper comportamiento esperado de V2.
 
-En especial, protege bien:
+En especial, hoy protege bien:
 
 - cómo entra y se valida el Excel;
-- cómo se decide create/update en producto e imágenes;
-- cómo se arma el resultado que ve negocio;
-- y cómo reacciona el sistema ante fallos operativos básicos.
+- cómo se decide update/create en producto e imágenes;
+- cómo se resuelven categorías en el flujo actual;
+- cómo se arma el resultado visible para negocio;
+- y cómo reacciona el proceso ante errores operativos frecuentes.
 
-Como inventario operativo, hoy este documento sirve para saber qué ya está blindado por tests y qué sigue más apoyado en validación manual o pruebas de integración futuras.
+Como inventario operativo, este documento sirve para entender qué comportamiento ya está blindado por tests unitarios y qué áreas todavía descansan más en validación manual o pruebas de integración.
