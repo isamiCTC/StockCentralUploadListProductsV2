@@ -198,6 +198,17 @@ Stock:
 - `PUT /providers/{providerID}/products/{sku}/`.
 - No crea producto y no hace patch parcial.
 
+Retry por interbloqueo:
+
+- El `PUT` y el `POST` del upsert, y el `PUT` de stock, se reintentan solo si
+  `Result.Description` contiene el mensaje específico de deadlock de SQL Server.
+- La política usa `products_api.deadlock_max_attempts` y
+  `products_api.deadlock_base_delay_ms`.
+- Otros errores HTTP y errores de transporte no se reintentan.
+- El backoff respeta el contexto y el timeout propio de la fila.
+- `product-upsert-ok` informa `update_attempts` y `create_attempts`; si se
+  agotan los intentos, el error informa el total y conserva la última respuesta.
+
 Archivos clave:
 
 - `internal/integrations/productsapi/client.go`

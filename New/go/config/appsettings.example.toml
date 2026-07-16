@@ -28,6 +28,8 @@ fallback_category_name = "Varios"
 base_url = "http://stockcentral.ctcils.com.ar:26202/Mp_ProductsAPI_CTC"
 provider_name = "CTC"
 timeout_seconds = 60
+deadlock_max_attempts = 3
+deadlock_base_delay_ms = 500
 
 [notifications]
 enabled = true

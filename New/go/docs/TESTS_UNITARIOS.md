@@ -227,6 +227,22 @@ Protege que un `POST` fallido no se informe como creación exitosa.
 
 Verifica que un fallo no recuperable del `PUT` devuelva error con contexto y body útil para diagnóstico.
 
+### `TestUpsertProductLegacyRetriesUpdateWhenAPIReportsDeadlock`
+
+Valida que un `PUT` que recibe el mensaje de interbloqueo se reintente y pueda recuperarse.
+
+### `TestUpsertProductLegacyRetriesCreateWhenAPIReportsDeadlock`
+
+Valida el mismo comportamiento para el `POST` posterior a `Producto inexistente`.
+
+### `TestUpsertProductLegacyDoesNotRetryUnrelatedInternalServerError`
+
+Confirma que un error `500` sin el mensaje específico no se reintente.
+
+### `TestUpsertProductLegacyStopsAfterConfiguredDeadlockAttempts`
+
+Confirma que los intentos terminen al alcanzar el máximo configurado.
+
 Archivo: `internal/integrations/productsapi/images_test.go`
 
 ### `TestSyncImageLegacySkipsWhenBase64IsEqual`

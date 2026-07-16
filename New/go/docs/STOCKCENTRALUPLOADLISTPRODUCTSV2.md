@@ -328,6 +328,8 @@ Valida, entre otras cosas:
 - `catalog.fallback_category_code`
 - `catalog.fallback_category_name`
 - `products_api.base_url`
+- `products_api.deadlock_max_attempts`
+- `products_api.deadlock_base_delay_ms`
 - `DB_CONNECTION_STRING`
 - `PRODUCTS_API_TOKEN`
 
@@ -374,6 +376,8 @@ Según el TOML actual:
 - `category_mappings_sp_name = CatalogCategoryBranchLookup_Get`
 - `fallback_category_code = 1041`
 - `fallback_category_name = Varios`
+- `products_api.deadlock_max_attempts = 3`
+- `products_api.deadlock_base_delay_ms = 500`
 
 ### Observación importante
 
@@ -503,6 +507,7 @@ Ejemplos:
 - resolución de subcategoría;
 - request JSON de producto cuando el detail está en `DEBUG`;
 - upsert de producto;
+- cantidad final de intentos del `PUT` y del `POST` en `product-upsert-ok`;
 - response HTTP de producto cuando el detail está en `DEBUG`, con `status` y body acotado;
 - inicio, error o éxito de imágenes;
 - request resumido de imagen cuando el detail está en `DEBUG`;
@@ -1686,6 +1691,55 @@ Si el `PUT` no da éxito y tampoco es el caso puntual de “Producto inexistente
 
 Si el `POST` falla o devuelve status no 2xx, se devuelve error.
 
+### Retry por interbloqueo
+
+Tanto el `PUT` como el `POST` del upsert se reintentan exclusivamente cuando
+`Result.Description` contiene el mensaje de SQL Server que indica que la
+transacción quedó en interbloqueo, fue elegida como sujeto y debe ejecutarse
+nuevamente.
+
+La detección exige que la descripción contenga las tres señales observadas en
+la respuesta real:
+
+- `quedó en interbloqueo`;
+- `fue elegida como sujeto del interbloqueo`;
+- `Ejecute de nuevo la transacción`.
+
+La política se configura en `[products_api]`:
+
+- `deadlock_max_attempts`: cantidad máxima de intentos totales;
+- `deadlock_base_delay_ms`: espera base entre intentos;
+- la espera crece exponencialmente;
+- el contexto y el timeout de la fila cancelan los intentos pendientes.
+
+Otros errores HTTP, incluso otros status `500`, no se reintentan.
+
+Con la configuración actual hay hasta tres intentos totales. Después del primer
+fallo espera `500 ms` y después del segundo espera `1 s`. No se reintentan
+errores de transporte ni respuestas exitosas. Si el contexto de la fila se
+cancela o vence durante la espera, el retry se interrumpe.
+
+### Trazabilidad de los retries
+
+El logger no genera una línea separada por cada intento. Registra el total al
+finalizar la operación:
+
+```text
+INFO product-upsert-ok | provider_id=456 excel_row=1499 sku=21087 action=UPDATE update_attempts=2 create_attempts=0
+```
+
+Para una creación recuperada durante el `POST`:
+
+```text
+INFO product-upsert-ok | provider_id=456 excel_row=1499 sku=21087 action=CREATE update_attempts=1 create_attempts=2
+```
+
+Si se agotan los intentos, `product-upsert-failed` conserva el status y el body
+de la última respuesta e informa, por ejemplo, `failed after 3 attempts`.
+
+Al iniciar el batch, `products-api-ready` también informa
+`deadlock_max_attempts` y `deadlock_base_delay_ms`.
+
 Hoy esos errores también conservan:
 
 - el status HTTP;
@@ -1700,6 +1754,8 @@ Hoy esos errores también conservan:
 1. `GET` del producto;
 2. pisa `Stock`;
 3. `PUT` del producto completo.
+
+El `PUT` de stock utiliza la misma política de retry selectivo por interbloqueo.
 
 Si el `GET` falla:
 

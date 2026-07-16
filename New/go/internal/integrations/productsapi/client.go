@@ -22,10 +22,12 @@ import (
 // La semántica de cada recurso vive en archivos separados.
 
 type Client struct {
-	baseURL      string
-	token        string
-	providerName string
-	http         *resty.Client
+	baseURL                 string
+	token                   string
+	providerName            string
+	deadlockMaxAttempts     int
+	deadlockBaseDelayMillis int
+	http                    *resty.Client
 }
 
 // NewClient construye el cliente REST principal de la API de productos.
@@ -35,10 +37,12 @@ func NewClient(cfg appconfig.ProductsAPIConfig, token string) *Client {
 		SetTimeout(time.Duration(cfg.TimeoutSeconds) * time.Second)
 
 	return &Client{
-		baseURL:      strings.TrimRight(cfg.BaseURL, "/"),
-		token:        token,
-		providerName: cfg.ProviderName,
-		http:         httpClient,
+		baseURL:                 strings.TrimRight(cfg.BaseURL, "/"),
+		token:                   token,
+		providerName:            cfg.ProviderName,
+		deadlockMaxAttempts:     cfg.DeadlockMaxAttempts,
+		deadlockBaseDelayMillis: cfg.DeadlockBaseDelayMillis,
+		http:                    httpClient,
 	}
 }
 

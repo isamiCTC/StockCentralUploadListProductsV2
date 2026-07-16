@@ -48,16 +48,21 @@ func ParseFlexibleFloat(raw string) (float64, error) {
 			value = strings.ReplaceAll(value, ",", ".")
 		}
 	case lastComma >= 0:
-		// Si solo hay una coma, asumimos separador decimal.
-		// Si hay varias, asumimos que son miles.
+		// Con un solo separador distinguimos un grupo de miles (1,000)
+		// de una fraccion decimal (12,5 o 0,125).
 		if strings.Count(value, ",") == 1 {
-			value = strings.ReplaceAll(value, ",", ".")
+			if isSingleThousandsSeparator(value, ",") {
+				value = strings.ReplaceAll(value, ",", "")
+			} else {
+				value = strings.ReplaceAll(value, ",", ".")
+			}
 		} else {
 			value = strings.ReplaceAll(value, ",", "")
 		}
 	case lastDot >= 0:
-		// Varias apariciones de punto se interpretan como miles.
-		if strings.Count(value, ".") > 1 {
+		// Varias apariciones de punto se interpretan como miles. Un unico
+		// punto con tres digitos a la derecha tambien puede ser miles.
+		if strings.Count(value, ".") > 1 || isSingleThousandsSeparator(value, ".") {
 			value = strings.ReplaceAll(value, ".", "")
 		}
 	}
@@ -69,6 +74,35 @@ func ParseFlexibleFloat(raw string) (float64, error) {
 	}
 
 	return parsed, nil
+}
+
+// isSingleThousandsSeparator resuelve el caso ambiguo de un unico punto o
+// coma. Lo considera miles cuando hay de uno a tres digitos enteros distintos
+// de cero a la izquierda y exactamente tres digitos a la derecha.
+//
+// El cero inicial queda reservado para fracciones: 0.125 sigue siendo 0.125.
+func isSingleThousandsSeparator(value, separator string) bool {
+	parts := strings.Split(value, separator)
+	if len(parts) != 2 {
+		return false
+	}
+
+	integerPart := strings.TrimPrefix(parts[0], "+")
+	integerPart = strings.TrimPrefix(integerPart, "-")
+	return len(integerPart) >= 1 && len(integerPart) <= 3 && integerPart != "0" &&
+		len(parts[1]) == 3 && allDigits(integerPart) && allDigits(parts[1])
+}
+
+func allDigits(value string) bool {
+	if value == "" {
+		return false
+	}
+	for _, char := range value {
+		if char < '0' || char > '9' {
+			return false
+		}
+	}
+	return true
 }
 
 // ParseFlexibleInt intenta leer un entero desde formatos numéricos razonables.

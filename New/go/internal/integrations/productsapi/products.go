@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
+	"time"
 )
 
 // Este archivo implementa las operaciones de productos respetando la
@@ -60,7 +61,9 @@ func (c *Client) CreateProduct(ctx context.Context, providerID int, product Prod
 // intentar update y, si la API dice "Producto inexistente", pasar a create.
 func (c *Client) UpsertProductLegacy(ctx context.Context, providerID int, product Product) (UpsertResult, error) {
 	// El primer intento siempre es update, igual que en el proceso original.
-	updateMeta, err := c.UpdateProduct(ctx, providerID, product.Sku, product)
+	updateMeta, updateAttempts, err := c.withDeadlockRetry(ctx, func() (*restyMeta, error) {
+		return c.UpdateProduct(ctx, providerID, product.Sku, product)
+	})
 	if err != nil {
 		return UpsertResult{}, err
 	}
@@ -68,38 +71,43 @@ func (c *Client) UpsertProductLegacy(ctx context.Context, providerID int, produc
 	// Si la API responde "producto inexistente", cambiamos de estrategia
 	// y lo intentamos crear.
 	if updateMeta.StatusCode == http.StatusBadRequest && isProductNotFound(updateMeta.Body) {
-		createMeta, createErr := c.CreateProduct(ctx, providerID, product)
+		createMeta, createAttempts, createErr := c.withDeadlockRetry(ctx, func() (*restyMeta, error) {
+			return c.CreateProduct(ctx, providerID, product)
+		})
 		if createErr != nil {
 			return UpsertResult{}, createErr
 		}
 		if !isSuccessfulStatus(createMeta.StatusCode) {
-			return UpsertResult{}, formatHTTPFailure(
+			return UpsertResult{}, withAttemptCount(createAttempts, formatHTTPFailure(
 				fmt.Sprintf("create product %s", product.Sku),
 				createMeta.StatusCode,
 				createMeta.Body,
-			)
+			))
 		}
 
 		return UpsertResult{
-			Action:     "CREATE",
-			UpdateMeta: updateMeta,
-			CreateMeta: createMeta,
+			Action:         "CREATE",
+			UpdateMeta:     updateMeta,
+			CreateMeta:     createMeta,
+			UpdateAttempts: updateAttempts,
+			CreateAttempts: createAttempts,
 		}, nil
 	}
 
 	// Si no hubo fallback y el update no fue exitoso, devolvemos error.
 	if !isSuccessfulStatus(updateMeta.StatusCode) {
-		return UpsertResult{}, formatHTTPFailure(
+		return UpsertResult{}, withAttemptCount(updateAttempts, formatHTTPFailure(
 			fmt.Sprintf("update product %s", product.Sku),
 			updateMeta.StatusCode,
 			updateMeta.Body,
-		)
+		))
 	}
 
 	// Si llegamos acá, el producto ya existía y quedó actualizado.
 	return UpsertResult{
-		Action:     "UPDATE",
-		UpdateMeta: updateMeta,
+		Action:         "UPDATE",
+		UpdateMeta:     updateMeta,
+		UpdateAttempts: updateAttempts,
 	}, nil
 }
 
@@ -113,18 +121,20 @@ func (c *Client) SyncStockLegacy(ctx context.Context, providerID int, sku string
 
 	// Solo tocamos stock y reenviamos el producto completo por PUT.
 	product.Stock = stock
-	updateMeta, err := c.UpdateProduct(ctx, providerID, sku, product)
+	updateMeta, updateAttempts, err := c.withDeadlockRetry(ctx, func() (*restyMeta, error) {
+		return c.UpdateProduct(ctx, providerID, sku, product)
+	})
 	if err != nil {
 		return nil, err
 	}
 
 	// La sincronización se considera exitosa solo con status HTTP 2xx.
 	if !isSuccessfulStatus(updateMeta.StatusCode) {
-		return nil, formatHTTPFailure(
+		return nil, withAttemptCount(updateAttempts, formatHTTPFailure(
 			fmt.Sprintf("sync stock for sku %s", sku),
 			updateMeta.StatusCode,
 			updateMeta.Body,
-		)
+		))
 	}
 
 	return updateMeta, nil
@@ -187,9 +197,62 @@ func isProductNotFound(body []byte) bool {
 	return strings.EqualFold(strings.TrimSpace(envelope.Result.Description), "Producto inexistente")
 }
 
+// withDeadlockRetry repite solo respuestas que contienen el mensaje concreto
+// de interbloqueo devuelto por SQL Server a traves de la API.
+func (c *Client) withDeadlockRetry(ctx context.Context, operation func() (*restyMeta, error)) (*restyMeta, int, error) {
+	maxAttempts := c.deadlockMaxAttempts
+	if maxAttempts <= 0 {
+		maxAttempts = 1
+	}
+
+	for attempt := 1; attempt <= maxAttempts; attempt++ {
+		meta, err := operation()
+		if err != nil || meta == nil || isSuccessfulStatus(meta.StatusCode) || !isDeadlockResponse(meta.Body) || attempt == maxAttempts {
+			return meta, attempt, err
+		}
+
+		delay := time.Duration(c.deadlockBaseDelayMillis) * time.Millisecond * time.Duration(1<<(attempt-1))
+		timer := time.NewTimer(delay)
+		select {
+		case <-ctx.Done():
+			if !timer.Stop() {
+				select {
+				case <-timer.C:
+				default:
+				}
+			}
+			return meta, attempt, ctx.Err()
+		case <-timer.C:
+		}
+	}
+
+	return nil, maxAttempts, nil
+}
+
+func withAttemptCount(attempts int, err error) error {
+	if attempts <= 1 {
+		return err
+	}
+	return fmt.Errorf("failed after %d attempts: %w", attempts, err)
+}
+
+func isDeadlockResponse(body []byte) bool {
+	var envelope ProductErrorEnvelope
+	if err := json.Unmarshal(body, &envelope); err != nil {
+		return false
+	}
+
+	description := strings.ToLower(envelope.Result.Description)
+	return strings.Contains(description, "quedó en interbloqueo") &&
+		strings.Contains(description, "fue elegida como sujeto del interbloqueo") &&
+		strings.Contains(description, "ejecute de nuevo la transacción")
+}
+
 // UpsertResult devuelve suficiente contexto para logging y decisiones posteriores.
 type UpsertResult struct {
-	Action     string
-	UpdateMeta *restyMeta
-	CreateMeta *restyMeta
+	Action         string
+	UpdateMeta     *restyMeta
+	CreateMeta     *restyMeta
+	UpdateAttempts int
+	CreateAttempts int
 }

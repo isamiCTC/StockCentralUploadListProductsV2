@@ -11,8 +11,8 @@ import (
 
 	"stockcentraluploadlistproductsv2/internal/catalog"
 	"stockcentraluploadlistproductsv2/internal/images"
-	productsapi "stockcentraluploadlistproductsv2/internal/integrations/productsapi"
 	"stockcentraluploadlistproductsv2/internal/intake"
+	productsapi "stockcentraluploadlistproductsv2/internal/integrations/productsapi"
 	"stockcentraluploadlistproductsv2/internal/logging"
 	"stockcentraluploadlistproductsv2/internal/notifications"
 	"stockcentraluploadlistproductsv2/internal/reporting"
@@ -733,6 +733,8 @@ func (p *FileProcessor) processFullImportRow(ctx context.Context, providerID int
 		logging.Int("excel_row", row.ExcelRowNumber),
 		logging.String("sku", row.SKU),
 		logging.String("action", upsertResult.Action),
+		logging.Int("update_attempts", upsertResult.UpdateAttempts),
+		logging.Int("create_attempts", upsertResult.CreateAttempts),
 	)
 	rowLogs.Debug("product-response",
 		logging.Int("provider_id", providerID),

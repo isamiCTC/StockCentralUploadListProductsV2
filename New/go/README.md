@@ -60,6 +60,20 @@ Campos clave esperados:
 - Email: `SENDGRID_API_KEY`
 - Paths batch: `paths.input_root`, `paths.processing_root`, `paths.processed_root`
 
+La API de productos incluye una política configurable de recuperación ante
+interbloqueos transitorios de SQL Server:
+
+```toml
+[products_api]
+deadlock_max_attempts = 3
+deadlock_base_delay_ms = 500
+```
+
+La política aplica al `PUT` y al `POST` de productos, y al `PUT` de stock. Solo
+reintenta cuando `Result.Description` contiene el mensaje específico de
+interbloqueo que pide ejecutar nuevamente la transacción; otros errores HTTP no
+se reintentan.
+
 ## Ejecución
 
 ### Self-check (recomendado antes de run)

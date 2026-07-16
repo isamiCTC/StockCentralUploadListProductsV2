@@ -24,6 +24,13 @@ func TestParseFlexibleFloat(t *testing.T) {
 		{name: "thousands comma decimal dot", input: "1,234.56", want: 1234.56},
 		{name: "spaces", input: " 1 234,50 ", want: 1234.50},
 		{name: "currency symbol", input: "$ 1.234,50", want: 1234.50},
+		{name: "single dot thousands", input: "$ 1.000", want: 1000},
+		{name: "single comma thousands", input: "1,000", want: 1000},
+		{name: "single dot decimal", input: "12.5", want: 12.5},
+		{name: "single comma decimal", input: "12,5", want: 12.5},
+		{name: "three digit fraction dot", input: "0.125", want: 0.125},
+		{name: "three digit fraction comma", input: "0,125", want: 0.125},
+		{name: "negative thousands", input: "-1.000", want: -1000},
 	}
 
 	for _, tc := range testCases {

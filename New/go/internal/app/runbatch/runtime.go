@@ -9,10 +9,10 @@ import (
 	"stockcentraluploadlistproductsv2/internal/catalog"
 	appconfig "stockcentraluploadlistproductsv2/internal/config"
 	"stockcentraluploadlistproductsv2/internal/images"
+	"stockcentraluploadlistproductsv2/internal/intake"
 	productsapi "stockcentraluploadlistproductsv2/internal/integrations/productsapi"
 	"stockcentraluploadlistproductsv2/internal/integrations/sendgrid"
 	"stockcentraluploadlistproductsv2/internal/integrations/sqlserver"
-	"stockcentraluploadlistproductsv2/internal/intake"
 	"stockcentraluploadlistproductsv2/internal/logging"
 	"stockcentraluploadlistproductsv2/internal/notifications"
 	"stockcentraluploadlistproductsv2/internal/reporting"
@@ -153,6 +153,8 @@ func LogBatchBootstrap(logs logging.LoggerSet, cfg appconfig.Config) {
 	logs.Summary.Info("products-api-ready",
 		logging.String("base_url", cfg.ProductsAPI.BaseURL),
 		logging.Int("timeout_seconds", cfg.ProductsAPI.TimeoutSeconds),
+		logging.Int("deadlock_max_attempts", cfg.ProductsAPI.DeadlockMaxAttempts),
+		logging.Int("deadlock_base_delay_ms", cfg.ProductsAPI.DeadlockBaseDelayMillis),
 	)
 	logs.Summary.Info("batch-settings",
 		logging.Int("catalog_id", cfg.Batch.CatalogID),

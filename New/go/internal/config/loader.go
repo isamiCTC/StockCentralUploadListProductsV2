@@ -109,6 +109,12 @@ func validate(cfg Config) error {
 	if cfg.ProductsAPI.BaseURL == "" {
 		return fmt.Errorf("missing products_api.base_url")
 	}
+	if cfg.ProductsAPI.DeadlockMaxAttempts <= 0 {
+		return fmt.Errorf("invalid products_api.deadlock_max_attempts")
+	}
+	if cfg.ProductsAPI.DeadlockBaseDelayMillis <= 0 {
+		return fmt.Errorf("invalid products_api.deadlock_base_delay_ms")
+	}
 	// Después validamos secretos mínimos para DB y API de productos.
 	if cfg.Secrets.DBConnectionString == "" {
 		return fmt.Errorf("missing DB_CONNECTION_STRING in .env")

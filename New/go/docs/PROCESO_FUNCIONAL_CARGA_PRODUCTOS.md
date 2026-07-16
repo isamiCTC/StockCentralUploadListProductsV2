@@ -561,6 +561,32 @@ Desde el punto de vista de negocio, esto significa que:
 - el proceso depende de que la API responda correctamente;
 - el resultado final puede verse impactado si la API rechaza una operación.
 
+## Recuperación ante interbloqueos transitorios
+
+La API puede responder que una transacción de SQL Server quedó en
+interbloqueo, fue elegida como sujeto y debe ejecutarse nuevamente. Esa
+respuesta se considera transitoria.
+
+Cuando aparece ese mensaje específico, el proceso vuelve a intentar la misma
+operación con una espera progresiva. La recuperación aplica a:
+
+- actualización de un producto existente (`PUT`);
+- creación de un producto nuevo (`POST`);
+- actualización del producto completo con el nuevo stock (`PUT`).
+
+Con la configuración operativa actual se realizan hasta tres intentos totales,
+con esperas de `500 ms` y `1 s`. El timeout de la fila sigue siendo el límite
+general: si vence, no continúan los intentos.
+
+No se reintentan automáticamente otros errores de la API. Si un deadlock se
+resuelve dentro de los intentos permitidos, la fila continúa normalmente. Si
+persiste, la fila termina en `ERROR` como cualquier fallo de impacto del
+producto.
+
+En el upsert de producto completo, los logs técnicos informan cuántos intentos
+necesitó el `PUT` y, cuando corresponde, el `POST`. Si se agotan, el error deja
+visible la cantidad total de intentos junto con la última respuesta de la API.
+
 ---
 
 ## Lógica funcional del archivo corto

@@ -55,9 +55,11 @@ type CatalogConfig struct {
 
 // ProductsAPIConfig define cómo hablar con la API de productos.
 type ProductsAPIConfig struct {
-	BaseURL        string `toml:"base_url"`
-	ProviderName   string `toml:"provider_name"`
-	TimeoutSeconds int    `toml:"timeout_seconds"`
+	BaseURL                 string `toml:"base_url"`
+	ProviderName            string `toml:"provider_name"`
+	TimeoutSeconds          int    `toml:"timeout_seconds"`
+	DeadlockMaxAttempts     int    `toml:"deadlock_max_attempts"`
+	DeadlockBaseDelayMillis int    `toml:"deadlock_base_delay_ms"`
 }
 
 // LoggingConfig define directorio, nivel y configuración de ambos archivos de log.

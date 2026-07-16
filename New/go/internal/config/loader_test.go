@@ -42,6 +42,9 @@ func TestLoadReadsSecretsFromEnvFile(t *testing.T) {
 	if cfg.Secrets.SendGridAPIKey != "test-sendgrid-key" {
 		t.Fatalf("SendGridAPIKey = %q", cfg.Secrets.SendGridAPIKey)
 	}
+	if cfg.ProductsAPI.DeadlockMaxAttempts != 3 || cfg.ProductsAPI.DeadlockBaseDelayMillis != 500 {
+		t.Fatalf("deadlock retry config = %d attempts/%d ms", cfg.ProductsAPI.DeadlockMaxAttempts, cfg.ProductsAPI.DeadlockBaseDelayMillis)
+	}
 }
 
 func TestLoadFailsWhenProductsTokenIsMissing(t *testing.T) {
@@ -159,6 +162,8 @@ fallback_category_name = "Varios"
 base_url = "http://example.test"
 provider_name = "CTC"
 timeout_seconds = 30
+deadlock_max_attempts = 3
+deadlock_base_delay_ms = 500
 
 [notifications]
 enabled = ` + enabled + `
