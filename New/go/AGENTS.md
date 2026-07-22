@@ -1,8 +1,52 @@
 # AGENTS.md
 
-Guia persistente para agentes que trabajen dentro de `New/go`.
+Guia persistente y orquestadora para agentes que trabajen dentro de `New/go`.
 
 Este proyecto es la V2 en Go de `StockCentralUploadListProductsV2`, un batch one-shot para procesar Excels de productos, impactar la API de productos, generar resultados y notificar por mail.
+
+## Rol del agente orquestador
+
+Este archivo gobierna todo el arbol `New/go`. El agente principal es responsable de:
+
+- entender el pedido y dividirlo por area funcional;
+- decidir si conviene resolverlo directamente o delegar partes independientes;
+- asignar un unico propietario de escritura por archivo;
+- integrar los aportes de especialistas y resolver contradicciones;
+- revisar el diff completo y ejecutar la validacion final proporcional al cambio;
+- asegurar consistencia entre codigo, tests y documentacion.
+
+No delegar por inercia. Las tareas pequenas y localizadas pueden resolverse directamente. Usar especialistas cuando el cambio cruce areas criticas, permita investigacion paralela util o necesite una revision especializada.
+
+Con cuatro slots disponibles, el orquestador puede coordinar hasta tres subagentes simultaneos. No ocupar todos los slots si las tareas dependen entre si o pueden producir ediciones superpuestas.
+
+## Especialistas y enrutamiento
+
+Antes de trabajar en una de estas areas, leer tambien su `AGENTS.md` local completo:
+
+| Especialista | Instrucciones | Alcance principal |
+|---|---|---|
+| Workbook y contrato de entrada | `internal/workbook/AGENTS.md` | Excel, formatos, headers, normalizacion, mapeo y validaciones de filas |
+| Batch y procesamiento | `internal/batch/AGENTS.md` | ciclo de archivos, concurrencia, timeouts y coordinacion por SKU |
+| Integraciones externas | `internal/integrations/AGENTS.md` | Products API, SQL Server, SendGrid, DTO, rutas y reintentos |
+| Reporting y comunicacion | `internal/reporting/AGENTS.md` | estados, resultados, mensajes, Excel de salida y notificaciones |
+
+El especialista de reporting tambien cubre conceptualmente `internal/results` e `internal/notifications`. Como esos directorios son hermanos y no heredan automaticamente `internal/reporting/AGENTS.md`, el orquestador debe pedir expresamente que se lean esas instrucciones al delegar tareas sobre ellos.
+
+`internal/catalog` suele requerir coordinacion entre batch, reporting e integraciones SQL. El orquestador asignara un propietario segun el nucleo del cambio y pedira revision cruzada si cambia la semantica de fallback.
+
+## Protocolo de delegacion
+
+Al crear un subagente:
+
+1. indicar el objetivo concreto, los directorios en alcance y si puede editar o solo investigar;
+2. pedirle que lea este archivo y el `AGENTS.md` especializado correspondiente;
+3. declarar archivos reservados por otros agentes para evitar conflictos;
+4. exigir una devolucion con hallazgos, archivos tocados, pruebas ejecutadas y riesgos pendientes;
+5. evitar que dos agentes modifiquen el mismo archivo simultaneamente.
+
+Para cambios transversales, dividir por responsabilidad, no por cantidad de archivos. Ejemplo: una regla nueva de SKU puede asignar validacion y tests a workbook, verificacion de rutas al especialista de integraciones y revision de mensajes/documentacion al especialista de reporting.
+
+Los especialistas pueden ejecutar tests acotados de su paquete. El orquestador conserva la responsabilidad de correr la suite oficial completa cuando corresponda y de hacer la revision final del repositorio.
 
 ## Prioridad de contexto
 
